@@ -1,0 +1,6 @@
+{
+  "name": "Red Telemétrica de Ríos de Loja",
+  "description": "Sistema de monitoreo telemétrico en tiempo real para nivel de agua, caudal e hidrogramas históricos en la cuenca de Loja.",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

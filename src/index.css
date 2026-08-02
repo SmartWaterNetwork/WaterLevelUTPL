@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Custom Dygraphs Plot & Zoom Selection Styling */
+.dygraph-chart-container {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.dygraph-chart-container canvas {
+  cursor: crosshair !important;
+  touch-action: pan-y;
+}
+
+.dygraph-rangesel-leftzoom,
+.dygraph-rangesel-rightzoom {
+  cursor: ew-resize !important;
+  z-index: 20 !important;
+}
+
+.dygraph-rangesel-fgcanvas,
+.dygraph-rangesel-bgcanvas {
+  cursor: default;
+}
+
+/* Clean styling for map charts and custom containers */
+.dygraph-chart-container {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* Continuous MVT Vector Tile River Downstream Flow Animation (Oil / Fluid Pipeline Style) */
+@keyframes oilPipelineFlow {
+  0% {
+    stroke-dashoffset: 240px;
+  }
+  100% {
+    stroke-dashoffset: 0px;
+  }
+}
+
+/* Ensure vector tile SVG containers do not clip vector paths during zoom */
+.leaflet-tile,
+svg.leaflet-tile,
+.leaflet-tile-container {
+  overflow: visible !important;
+}
+
+/* Base style for all static river tile paths (unalerted / normal flow) */
+path.mvt-river-path-static {
+  stroke-dasharray: none !important;
+  animation: none !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  transition: stroke 0.4s ease, stroke-width 0.4s ease, opacity 0.4s ease;
+}
+
+/* Downstream flow animation for active alert/warning river subtramos ONLY (Oil / Fluid Pipeline Style) */
+path.mvt-river-path-warning,
+path.mvt-river-path-alert,
+.mvt-river-path-warning,
+.mvt-river-path-alert {
+  stroke-dasharray: 70px 170px !important;
+  stroke-linecap: round !important;
+  stroke-linejoin: round !important;
+  animation: oilPipelineFlow 1.2s linear infinite !important;
+  transition: stroke 0.4s ease, stroke-width 0.4s ease, filter 0.4s ease;
+}
+
+path.mvt-river-path-warning,
+.mvt-river-path-warning {
+  animation-duration: 1.2s !important;
+  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.85));
+}
+
+path.mvt-river-path-alert,
+.mvt-river-path-alert {
+  animation-duration: 0.6s !important;
+  filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.95));
+}
+
+
+
