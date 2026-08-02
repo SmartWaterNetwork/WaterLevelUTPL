@@ -1,20 +1,55 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# Nivel y caudal de ríos — Red hidrológica de Loja
 
-# Run and deploy your AI Studio app
+Visualización en tiempo real del nivel del agua y el caudal estimado en cuatro
+estaciones telemétricas de Loja (Ecuador). Los datos llegan desde canales de
+ThingSpeak; el caudal se deriva del nivel con Manning, vertedero o un factor
+lineal, configurable por estación.
 
-This contains everything you need to run your app locally.
+## Cómo está organizado
 
-View your app in AI Studio: https://ai.studio/apps/e36b2d61-2491-43cf-9ed8-353ca7c44608
+La interfaz tiene dos vistas y un panel fijo de estaciones:
 
-## Run Locally
+- **Mapa** — mapa a altura completa con la red hidrográfica y un marcador por
+  estación coloreado según su estado.
+- **Telemetría** — hidrograma de la estación seleccionada (nivel y caudal en
+  gráficos separados, cada uno con su propio eje) y el esquema del sensor sobre
+  el canal, en corte 2D o en 3D.
+- **Panel lateral** — las cuatro estaciones con su última lectura, tendencia y
+  una sparkline. Siempre visible; es también el selector de estación.
 
-**Prerequisites:**  Node.js
+Alertas, manuales del sensor y configuración se abren en paneles laterales desde
+los iconos de la cabecera, para no competir con el mapa.
 
+### Estructura del código
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+| Ruta | Qué contiene |
+|---|---|
+| `src/stations.ts` | Definición de las cuatro estaciones y sus canales |
+| `src/theme.ts` | Tokens de color, umbrales de nivel y ventana de obsolescencia |
+| `src/hooks/useStationNetwork.ts` | Sondeo de los canales y estado derivado de cada estación |
+| `src/components/` | Vistas y controles |
+| `server.ts` | Servidor Express con proxy a ThingSpeak y Vite en desarrollo |
+
+## Ejecutar en local
+
+**Requisitos:** Node.js 20+
+
+1. Instalar dependencias: `npm install`
+2. Copiar `.env.example` a `.env` y rellenar `VITE_MAPBOX_TOKEN`.
+   Sin token la aplicación funciona igual, pero usa OpenStreetMap como mapa base.
+3. Arrancar: `npm run dev` → http://localhost:3000
+
+Otros comandos: `npm run build` (producción), `npm start` (servir el build),
+`npm run lint` (comprobación de tipos).
+
+## Notas
+
+- Las lecturas nunca se inventan: si un canal responde sin datos, la estación se
+  muestra como «Sin datos» en lugar de mostrar un valor de ejemplo. Una lectura
+  con más de una hora se marca como obsoleta.
+- Los umbrales de estado (precaución 58 cm, alerta 70 cm) viven en `src/theme.ts`
+  y los comparten el mapa, el panel y los gráficos. Las reglas de alerta con
+  notificación y sonido se configuran aparte, desde el panel de alertas.
+- Las claves de lectura de ThingSpeak están en `src/stations.ts`. Son claves de
+  solo lectura de canales públicos; si alguno pasa a ser privado, conviene
+  moverlas a variables de entorno.

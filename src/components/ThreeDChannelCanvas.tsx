@@ -444,121 +444,106 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
 
   return (
     <div className="space-y-3">
-      {/* 3D Canvas Box */}
-      <div className="relative w-full h-[380px] bg-sky-50 rounded-2xl border border-sky-200 overflow-hidden shadow-inner group">
-        {/* Three.js Canvas Container */}
+      {/* 3D canvas */}
+      <div className="relative w-full h-[340px] bg-[#f2f5f7] rounded-md border border-hairline overflow-hidden">
         <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
-        {/* Top Left Badge & Live Telemetry Overlay */}
-        <div className="absolute top-3 left-3 bg-white/95 backdrop-blur-md p-3 rounded-2xl border border-slate-200 shadow-md text-xs space-y-1.5 pointer-events-none max-w-[230px]">
-          <div>
-            <div className="flex items-center gap-1.5 font-bold text-blue-700">
-              <Waves className="w-4 h-4 text-blue-600 animate-pulse shrink-0" />
-              <span className="truncate">{riverName}</span>
+        {/* Live values for the rendered scene */}
+        <div className="absolute top-2.5 left-2.5 bg-surface/95 border border-hairline rounded-md px-3 py-2 pointer-events-none max-w-[210px]">
+          <div className="text-[11px] font-semibold text-ink truncate">{riverName}</div>
+          <div className="text-[10px] text-ink-3 truncate">{locationName}</div>
+          <dl className="mt-2 pt-2 border-t border-hairline space-y-1 text-[11px] tabular-nums">
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink-3">Nivel</dt>
+              <dd className="text-ink font-semibold">
+                {activeLevelCm.toFixed(1)} {levelUnit}
+              </dd>
             </div>
-            <p className="text-[10px] text-slate-500 font-medium truncate">{locationName}</p>
-          </div>
-          <div className="font-mono text-[11px] text-slate-700 space-y-1 pt-1 border-t border-slate-100">
-            <div className="flex justify-between gap-3 bg-blue-50 p-1.5 rounded-lg border border-blue-100">
-              <span className="text-slate-600 font-medium">Nivel Río:</span>
-              <strong className="text-blue-700 font-bold">{activeLevelCm.toFixed(1)} cm</strong>
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink-3">Vacío (OF)</dt>
+              <dd className="text-ink-2">{emptyHeightCm.toFixed(1)} cm</dd>
             </div>
-            <div className="flex justify-between gap-3 bg-emerald-50 p-1.5 rounded-lg border border-emerald-100">
-              <span className="text-slate-600 font-medium">Caudal (Q):</span>
-              <strong className="text-emerald-700 font-bold">{(activeLevelCm * 2.5).toFixed(1)} L/s</strong>
+            <div className="flex justify-between gap-4">
+              <dt className="text-ink-3">Coord.</dt>
+              <dd className="text-ink-2">
+                {coordinates.lat.toFixed(4)}, {coordinates.lng.toFixed(4)}
+              </dd>
             </div>
-            <div className="flex justify-between gap-3 px-1 text-[10px]">
-              <span className="text-slate-500">Coordenadas:</span>
-              <strong className="text-slate-700 font-semibold">{coordinates.lat.toFixed(4)}, {coordinates.lng.toFixed(4)}</strong>
-            </div>
-            <div className="flex justify-between gap-3 px-1 text-[10px]">
-              <span className="text-slate-500">Dist. Vacío (OF):</span>
-              <strong className="text-purple-700 font-bold">{emptyHeightCm.toFixed(1)} cm</strong>
-            </div>
-          </div>
+          </dl>
         </div>
 
-        {/* Top Right Controls Overlay */}
-        <div className="absolute top-3 right-3 flex items-center gap-2">
-          <button
-            onClick={handleResetCamera}
-            className="flex items-center gap-1.5 bg-white/95 hover:bg-white text-slate-700 text-xs font-semibold px-3 py-1.5 rounded-xl border border-slate-200 shadow-sm transition-all"
-            title="Restablecer Vista 3D"
-          >
-            <RotateCcw className="w-3.5 h-3.5 text-blue-600" />
-            <span>Centrar Vista</span>
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={handleResetCamera}
+          className="absolute top-2.5 right-2.5 flex items-center gap-1.5 bg-surface/95 border border-hairline rounded-md px-2.5 py-1.5 text-[11px] text-ink-2 hover:text-ink"
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+          Centrar vista
+        </button>
 
-        {/* Bottom Left Key Points Legend Overlay */}
         {showKeyPoints && (
-          <div className="absolute bottom-3 left-3 bg-white/95 backdrop-blur-md px-3 py-2 rounded-xl border border-slate-200 shadow-sm text-[11px] font-semibold flex items-center gap-3 text-slate-700 pointer-events-none">
-            <div className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block" />
-              <span>O: Sensor Telemétrico</span>
-            </div>
-            <div className="flex items-center gap-1">
-              <span className="w-2.5 h-2.5 rounded-full bg-blue-600 inline-block" />
-              <span>F: Espejo de Agua</span>
-            </div>
-            <div className="flex items-center gap-1 text-sky-700 font-bold ml-1">
-              <span>Ángulo de Emisión Radar</span>
-            </div>
+          <div className="absolute bottom-2.5 left-2.5 bg-surface/95 border border-hairline rounded-md px-2.5 py-1.5 flex items-center gap-3 text-[10px] text-ink-2 pointer-events-none">
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-crit" aria-hidden="true" />O · sensor
+            </span>
+            <span className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-level" aria-hidden="true" />F · espejo de agua
+            </span>
           </div>
         )}
 
-        {/* Hint Overlay */}
-        <div className="absolute bottom-3 right-3 bg-slate-900/80 backdrop-blur-md text-white text-[10px] font-medium px-2.5 py-1 rounded-lg pointer-events-none flex items-center gap-1 opacity-80">
-          <Maximize2 className="w-3 h-3 text-sky-400" />
-          <span>Arrastre para rotar 3D &bull; Zoom</span>
+        <div className="absolute bottom-2.5 right-2.5 flex items-center gap-1 text-[10px] text-ink-3 bg-surface/90 border border-hairline rounded-md px-2 py-1 pointer-events-none">
+          <Maximize2 className="w-3 h-3" aria-hidden="true" />
+          Arrastre para rotar
         </div>
       </div>
 
-      {/* Interactive Level Simulation Widget */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm space-y-3">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-          <div className="flex items-center gap-2">
-            <Sliders className="w-4 h-4 text-blue-600" />
-            <h4 className="text-xs font-bold text-slate-900">Simulación interactiva de Crecida / Nivel de Río</h4>
+      {/* What-if slider. Clearly separated from the measured value. */}
+      <div className="border border-hairline rounded-md p-3.5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h4 className="text-[12px] font-semibold text-ink">Simulación de crecida</h4>
+            <p className="text-[10px] text-ink-3 mt-0.5">
+              Solo afecta a esta vista 3D; no altera los datos medidos.
+            </p>
           </div>
 
-          <div className="flex items-center gap-2 text-xs font-semibold">
+          <div className="flex items-center border border-hairline rounded-md overflow-hidden text-[11px]">
             <button
+              type="button"
               onClick={() => {
                 setIsSimulating(false);
                 setSimulatedLevelCm(currentRawLevelCm);
               }}
-              className={`px-3 py-1 rounded-lg transition-all ${
-                !isSimulating
-                  ? 'bg-blue-600 text-white font-bold shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              aria-pressed={!isSimulating}
+              className={`px-2.5 py-1.5 ${!isSimulating ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'}`}
             >
-              Telemetría en Tiempo Real
+              Medido
             </button>
             <button
+              type="button"
               onClick={() => setIsSimulating(true)}
-              className={`px-3 py-1 rounded-lg transition-all ${
-                isSimulating
-                  ? 'bg-amber-500 text-white font-bold shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-              }`}
+              aria-pressed={isSimulating}
+              className={`px-2.5 py-1.5 ${isSimulating ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'}`}
             >
-              Modo Simulación
+              Simulado
             </button>
           </div>
         </div>
 
-        {/* Slider & Presets */}
-        <div className="space-y-3">
-          <div className="flex items-center justify-between gap-4 text-xs">
-            <span className="text-slate-600 font-medium">Ajustar Nivel Simulado (cm):</span>
-            <span className="font-mono font-bold text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">
-              {simulatedLevelCm.toFixed(1)} cm ({((simulatedLevelCm / installationHeightCm) * 100).toFixed(0)}%)
+        <div className="mt-3">
+          <div className="flex items-center justify-between text-[11px] mb-1.5">
+            <label htmlFor="sim-level" className="text-ink-2">
+              Nivel simulado
+            </label>
+            <span className="text-ink font-semibold tabular-nums">
+              {simulatedLevelCm.toFixed(1)} cm ·{' '}
+              {((simulatedLevelCm / installationHeightCm) * 100).toFixed(0)}%
             </span>
           </div>
 
           <input
+            id="sim-level"
             type="range"
             min="5"
             max={installationHeightCm}
@@ -568,47 +553,29 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
               setIsSimulating(true);
               setSimulatedLevelCm(Number(e.target.value));
             }}
-            className="w-full accent-blue-600 cursor-pointer h-2 bg-slate-200 rounded-lg"
+            className="w-full accent-ink h-1 cursor-pointer"
           />
 
-          {/* Quick Presets Buttons */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-semibold pt-1">
-            <button
-              onClick={() => {
-                setIsSimulating(true);
-                setSimulatedLevelCm(15);
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 border border-slate-200 transition-all text-center"
-            >
-              💧 Caudal Bajo (15 cm)
-            </button>
-            <button
-              onClick={() => {
-                setIsSimulating(true);
-                setSimulatedLevelCm(45);
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 hover:text-blue-700 text-slate-700 border border-slate-200 transition-all text-center"
-            >
-              🌊 Nivel Normal (45 cm)
-            </button>
-            <button
-              onClick={() => {
-                setIsSimulating(true);
-                setSimulatedLevelCm(75);
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-all text-center"
-            >
-              ⚠️ Alerta Crecida (75 cm)
-            </button>
-            <button
-              onClick={() => {
-                setIsSimulating(true);
-                setSimulatedLevelCm(95);
-              }}
-              className="px-2.5 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-800 border border-red-200 transition-all text-center"
-            >
-              🚨 Inundación Crítica (95 cm)
-            </button>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3 text-[11px]">
+            {[
+              { label: 'Caudal bajo', cm: 15 },
+              { label: 'Nivel normal', cm: 45 },
+              { label: 'Crecida', cm: 75 },
+              { label: 'Inundación', cm: 95 },
+            ].map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  setIsSimulating(true);
+                  setSimulatedLevelCm(preset.cm);
+                }}
+                className="px-2 py-1.5 rounded-md border border-hairline text-ink-2 hover:text-ink hover:bg-[#f7f7f5]"
+              >
+                {preset.label}
+                <span className="block text-[10px] text-ink-3 tabular-nums">{preset.cm} cm</span>
+              </button>
+            ))}
           </div>
         </div>
       </div>

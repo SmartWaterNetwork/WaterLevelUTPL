@@ -13,7 +13,7 @@ export interface ThingSpeakChannel {
   field1: string;
   created_at: string;
   updated_at: string;
-  last_entry_id: number;
+  last_entry_id: number | null;
 }
 
 export interface ThingSpeakResponse {
@@ -21,12 +21,12 @@ export interface ThingSpeakResponse {
   feeds: ThingSpeakFeed[];
 }
 
-export type AlertType = 
-  | 'MAX_LEVEL' 
-  | 'MIN_LEVEL' 
-  | 'MAX_FLOW' 
-  | 'MIN_FLOW' 
-  | 'RATE_OF_CHANGE' 
+export type AlertType =
+  | 'MAX_LEVEL'
+  | 'MIN_LEVEL'
+  | 'MAX_FLOW'
+  | 'MIN_FLOW'
+  | 'RATE_OF_CHANGE'
   | 'SENSOR_OFFLINE';
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';
@@ -45,6 +45,7 @@ export interface AlertConfig {
 export interface AlertLogItem {
   id: string;
   timestamp: string;
+  stationName: string;
   title: string;
   message: string;
   type: AlertType;
@@ -52,25 +53,6 @@ export interface AlertLogItem {
   unit: string;
   severity: AlertSeverity;
   read: boolean;
-}
-
-export interface Station {
-  id: string;
-  name: string;
-  riverName: string;
-  locationName: string;
-  lat: number;
-  lng: number;
-  isLiveThingSpeak: boolean;
-  channelId?: number;
-  apiKey?: string;
-  currentLevelCm: number;
-  currentFlowLps: number;
-  status: 'NORMAL' | 'PRECAUCION' | 'ALERTA';
-  lastUpdated: string;
-  installationHeightCm: number;
-  trend: 'STABLE' | 'RISING' | 'FALLING';
-  settings: ChannelSettings;
 }
 
 export type LevelUnit = 'cm' | 'm' | 'mm' | 'in';
@@ -93,4 +75,45 @@ export interface ChannelSettings {
   channelSlope: number; // e.g. 0.001
   manningN: number; // e.g. 0.013 for smooth concrete
   linearFactor: number; // Flow = level * linearFactor
+}
+
+/** Static description of a gauging station. Live values are never stored here. */
+export interface StationConfig {
+  id: string;
+  name: string; // "Estación 01"
+  riverName: string; // "Río Malacatos"
+  locationName: string; // UTM reference
+  lat: number;
+  lng: number;
+  settings: ChannelSettings;
+}
+
+/** One telemetry sample, with the derived values the UI actually plots. */
+export interface Reading {
+  entryId: number;
+  iso: string;
+  tMs: number;
+  /** Raw sensor value, always centimetres. */
+  levelCm: number;
+  /** Level converted to the configured display unit. */
+  level: number;
+  /** Flow derived from levelCm, in the configured flow unit. */
+  flow: number;
+}
+
+export type Trend = 'RISING' | 'FALLING' | 'STABLE';
+
+/** Everything the UI needs to render one station, derived from its feed. */
+export interface StationState {
+  config: StationConfig;
+  readings: Reading[];
+  latest: Reading | null;
+  status: 'NORMAL' | 'PRECAUCION' | 'ALERTA' | 'OFFLINE';
+  trend: Trend;
+  /** True when the newest reading is older than the staleness window. */
+  isStale: boolean;
+  isLoading: boolean;
+  /** Set when the channel answered but carries no readings at all. */
+  isEmpty: boolean;
+  error: string | null;
 }

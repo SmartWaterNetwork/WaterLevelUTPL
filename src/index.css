@@ -1,82 +1,256 @@
 @import "tailwindcss";
 
-/* Custom Dygraphs Plot & Zoom Selection Styling */
-.dygraph-chart-container {
-  user-select: none;
-  -webkit-user-select: none;
+/* ---------------------------------------------------------------------------
+   Design tokens. Mirrors src/theme.ts — keep the two in sync.
+   Warm neutral chrome, one accent per measured series, status colours reserved.
+--------------------------------------------------------------------------- */
+@theme {
+  --color-page: #f4f4f2;
+  --color-surface: #ffffff;
+  --color-hairline: #e4e3dd;
+  --color-grid: #e1e0d9;
+
+  --color-ink: #0b0b0b;
+  --color-ink-2: #52514e;
+  --color-ink-3: #898781;
+
+  --color-level: #2a78d6;
+  --color-flow: #1baf7a;
+
+  --color-ok: #0ca30c;
+  --color-warn: #fab219;
+  --color-crit: #d03b3b;
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
-.dygraph-chart-container canvas {
-  cursor: crosshair !important;
-  touch-action: pan-y;
+html,
+body,
+#root {
+  height: 100%;
 }
 
-.dygraph-rangesel-leftzoom,
-.dygraph-rangesel-rightzoom {
-  cursor: ew-resize !important;
-  z-index: 20 !important;
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
-.dygraph-rangesel-fgcanvas,
-.dygraph-rangesel-bgcanvas {
-  cursor: default;
+/* Small caps section labels used across the panel and cards. */
+.eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-3);
 }
 
-/* Clean styling for map charts and custom containers */
-.dygraph-chart-container {
-  user-select: none;
-  -webkit-user-select: none;
+/* Thin scrollbars so the side panel doesn't shout. */
+.thin-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #d4d3cc transparent;
+}
+.thin-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.thin-scroll::-webkit-scrollbar-thumb {
+  background: #d4d3cc;
+  border-radius: 99px;
+}
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-/* Continuous MVT Vector Tile River Downstream Flow Animation (Oil / Fluid Pipeline Style) */
-@keyframes oilPipelineFlow {
-  0% {
-    stroke-dashoffset: 240px;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
   }
-  100% {
-    stroke-dashoffset: 0px;
+  to {
+    opacity: 1;
+  }
+}
+.animate-fadeIn {
+  animation: fadeIn 0.18s ease-out;
+}
+
+@keyframes slideInRight {
+  from {
+    transform: translateX(12px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+.animate-slideIn {
+  animation: slideInRight 0.2s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fadeIn,
+  .animate-slideIn {
+    animation: none;
   }
 }
 
-/* Ensure vector tile SVG containers do not clip vector paths during zoom */
+/* ---------------------------------------------------------------------------
+   Leaflet — strip the default chrome down to hairlines so the basemap reads
+   as the surface rather than as a widget.
+--------------------------------------------------------------------------- */
+.leaflet-container {
+  font-family: var(--font-sans);
+  background: #eeeeec;
+}
+
+.leaflet-control-zoom {
+  border: 1px solid var(--color-hairline) !important;
+  border-radius: 8px !important;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgb(11 11 11 / 0.06) !important;
+}
+
+.leaflet-control-zoom a {
+  width: 30px !important;
+  height: 30px !important;
+  line-height: 30px !important;
+  color: var(--color-ink-2) !important;
+  background: var(--color-surface) !important;
+  border-bottom-color: var(--color-hairline) !important;
+  font-weight: 400 !important;
+}
+
+.leaflet-control-zoom a:hover {
+  background: #f7f7f5 !important;
+  color: var(--color-ink) !important;
+}
+
+.leaflet-control-attribution {
+  background: rgb(255 255 255 / 0.82) !important;
+  color: var(--color-ink-3) !important;
+  font-size: 10px !important;
+  padding: 2px 6px !important;
+  border-radius: 6px 0 0 0;
+}
+
+.leaflet-control-attribution a {
+  color: var(--color-ink-2) !important;
+}
+
+/* Station markers are plain divIcons; the wrapper contributes no box of its own. */
+.station-marker {
+  background: transparent;
+  border: none;
+}
+
+.station-marker__inner {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.station-marker__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 0.18);
+  flex: none;
+}
+
+.station-marker--active .station-marker__dot {
+  width: 14px;
+  height: 14px;
+  box-shadow: 0 0 0 1px rgb(11 11 11 / 0.35), 0 0 0 5px rgb(11 11 11 / 0.08);
+}
+
+.station-marker__label {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: rgb(255 255 255 / 0.94);
+  border: 1px solid var(--color-hairline);
+  border-radius: 6px;
+  padding: 3px 7px;
+  box-shadow: 0 1px 2px rgb(11 11 11 / 0.06);
+}
+
+.station-marker--active .station-marker__label {
+  border-color: rgb(11 11 11 / 0.45);
+}
+
+.station-marker__name {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: var(--color-ink);
+}
+
+.station-marker__value {
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--color-ink-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.station-marker__value em {
+  font-style: normal;
+  color: var(--color-ink-3);
+}
+
+/* ---------------------------------------------------------------------------
+   Vector-tile river reaches. Only reaches in a raised state animate; a normal
+   reach is a still hairline so movement always means something.
+--------------------------------------------------------------------------- */
 .leaflet-tile,
 svg.leaflet-tile,
 .leaflet-tile-container {
   overflow: visible !important;
 }
 
-/* Base style for all static river tile paths (unalerted / normal flow) */
-path.mvt-river-path-static {
+@keyframes riverFlow {
+  from {
+    stroke-dashoffset: 240px;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+path.river-normal {
   stroke-dasharray: none !important;
-  animation: none !important;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
   transition: stroke 0.4s ease, stroke-width 0.4s ease, opacity 0.4s ease;
 }
 
-/* Downstream flow animation for active alert/warning river subtramos ONLY (Oil / Fluid Pipeline Style) */
-path.mvt-river-path-warning,
-path.mvt-river-path-alert,
-.mvt-river-path-warning,
-.mvt-river-path-alert {
+path.river-warn,
+path.river-alert {
   stroke-dasharray: 70px 170px !important;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
-  animation: oilPipelineFlow 1.2s linear infinite !important;
-  transition: stroke 0.4s ease, stroke-width 0.4s ease, filter 0.4s ease;
+  animation: riverFlow 1.6s linear infinite;
 }
 
-path.mvt-river-path-warning,
-.mvt-river-path-warning {
-  animation-duration: 1.2s !important;
-  filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.85));
+path.river-alert {
+  animation-duration: 0.9s;
 }
 
-path.mvt-river-path-alert,
-.mvt-river-path-alert {
-  animation-duration: 0.6s !important;
-  filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.95));
+@media (prefers-reduced-motion: reduce) {
+  path.river-warn,
+  path.river-alert {
+    animation: none;
+    stroke-dasharray: none !important;
+  }
 }
 
-
-
+/* Recharts: keep focus rings visible on the interactive layers. */
+.recharts-wrapper:focus-visible,
+.recharts-surface:focus-visible {
+  outline: 2px solid var(--color-ink-3);
+  outline-offset: 2px;
+}
