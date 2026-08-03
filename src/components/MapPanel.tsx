@@ -1,9 +1,15 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet.vectorgrid';
 import { StationState } from '../types';
-import { series, status as statusColor, statusLabel } from '../theme';
-import { calculateVelocity } from '../utils/flowCalculator';
+import { status as statusColor, statusLabel } from '../theme';
+import {
+  WAVE_PERIOD_S,
+  networkVelocity,
+  reachColors,
+  reachStateAt,
+  waveDelaySeconds,
+} from '../utils/reachFlow';
 import { num } from '../utils/format';
 import { Layers, X } from 'lucide-react';
 
@@ -35,38 +41,17 @@ const OSM_ATTRIBUTION =
 const RIVERS_MVT_URL =
   'https://api.ellipsis-drive.com/v3/ogc/mvt/c001410b-232a-43c7-945a-2989b88f0a6d/{z}/{x}/{y}?timestampId=6890e507-e7e8-45c7-82c8-0c411563fc5d&token=epat_g6H3SbsolcBukmxPlYifqUkp5BdyUYK3e4n09WUeT1GlXP1lUFAwIDfR1JN6fRjh';
 
-/**
- * Whether the reaches in the vector tiles are digitised from headwater to
- * outlet. Checked against the rendered geometry: length-weighted, the vertex
- * order of this dataset runs north, and north is downstream for the Malacatos
- * and the Zamora through Loja. Flip this if the source layer ever changes.
- */
-const VERTEX_ORDER_IS_DOWNSTREAM = true;
+/** Below this the reach is too short for a crest to read as it passes. */
+const MIN_WAVE_REACH_M = 250;
 
-/** One dash period of `path.river-flow`, in pixels. Must match index.css. */
-const DASH_PERIOD_PX = 40;
-
-/**
- * At true scale the drift would be imperceptible — around 0.03 px/s for a
- * 0.5 m/s river at zoom 13 — so the velocity is exaggerated by this factor.
- * Relative speeds between reaches and between zoom levels stay faithful.
- */
-const VELOCITY_EXAGGERATION = 400;
-
-const MIN_FLOW_DURATION_S = 0.9;
-const MAX_FLOW_DURATION_S = 5;
-
-/** Below this the reach is too short for the drift to read as movement. */
-const MIN_FLOW_REACH_M = 250;
-
-/** Ranking used when two stations gauge the same river. */
-const SEVERITY = { OFFLINE: 0, NORMAL: 1, PRECAUCION: 2, ALERTA: 3 } as const;
+/** Prefix of the class that records which gauged river a reach belongs to. */
+const RIVER_TOKEN_CLASS = 'river-of-';
 
 /** Lowercase and strip diacritics so "Río" matches the layer's "Rio". */
 function normalize(value: unknown): string {
   return String(value ?? '')
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
 }
 
@@ -89,119 +74,58 @@ function reachKind(properties: Record<string, unknown>): ReachKind {
   return 'PERENNE';
 }
 
-/** Ground resolution of the Web Mercator tile grid, in metres per pixel. */
-function metresPerPixel(latitude: number, zoom: number): number {
-  return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / Math.pow(2, zoom);
-}
-
-/**
- * Seconds for one dash period, so that a faster river visibly drifts faster and
- * zooming in speeds the drift up the way real motion would.
- */
-function flowDuration(velocityMps: number, latitude: number, zoom: number): number {
-  if (velocityMps <= 0) return MAX_FLOW_DURATION_S;
-  const pxPerSecond = (velocityMps / metresPerPixel(latitude, zoom)) * VELOCITY_EXAGGERATION;
-  const seconds = DASH_PERIOD_PX / pxPerSecond;
-  return Math.min(MAX_FLOW_DURATION_S, Math.max(MIN_FLOW_DURATION_S, seconds));
-}
-
-/**
- * The station that gauges this reach's river, matched on the layer's `nombre`.
- * Two stations sit on the Zamora, so the more severe one wins and an alert is
- * never hidden behind a calm reading.
- */
-function gaugeFor(
+/** Which gauged river a reach belongs to, from the layer's `nombre` field. */
+function riverTokenFor(
   stations: StationState[],
   properties: Record<string, unknown>
-): StationState | undefined {
+): string | null {
   const name = normalize(properties?.nombre);
-  if (!name || name === 'none') return undefined;
-
-  const matches = stations.filter((s) =>
-    s.config.matchTokens.some((token) => name.includes(token))
-  );
-  if (matches.length <= 1) return matches[0];
-
-  return matches.reduce((worst, s) => (SEVERITY[s.status] > SEVERITY[worst.status] ? s : worst));
+  if (!name || name === 'none') return null;
+  for (const station of stations) {
+    const hit = station.config.matchTokens.find((token) => name.includes(token));
+    if (hit) return hit;
+  }
+  return null;
 }
 
-/** The continuous river hairline. */
-function baseStyleFor(stations: StationState[], properties: Record<string, unknown>) {
-  const match = gaugeFor(stations, properties);
-
-  // A gauged river in a raised state is redrawn in its status colour.
-  if (match && (match.status === 'ALERTA' || match.status === 'PRECAUCION')) {
-    return {
-      weight: match.status === 'ALERTA' ? 2.6 : 2.2,
-      color: statusColor[match.status],
-      opacity: 0.9,
-      fill: false,
-      dashArray: undefined,
-      className: 'river-base',
-    };
-  }
-
-  // Otherwise the reach is drawn the way hydrographic maps draw it: solid for a
-  // perennial course, dashed when it only runs seasonally, dotted where the
-  // channel is culverted.
+/**
+ * How a reach is drawn from its attributes alone. Reaches that carry the wave
+ * get their colours finished by `applyReachStates`, the only place that knows
+ * where each one sits along its river.
+ */
+function reachStyleFor(stations: StationState[], properties: Record<string, unknown>) {
   const kind = reachKind(properties);
+  const token = riverTokenFor(stations, properties);
+  const lengthM = Number(properties?.shape_length) || 0;
+
+  // Only water that is there, visible and gauged can carry a crest: seasonal
+  // beds may be dry, culverted stretches run underground, a 100 m stub is too
+  // short to read, and an ungauged creek has no state to report.
+  const carriesWave = kind === 'PERENNE' && lengthM >= MIN_WAVE_REACH_M && token !== null;
+
+  const className = [
+    'river-reach',
+    carriesWave ? 'river-reach--wave' : '',
+    token ? `${RIVER_TOKEN_CLASS}${token}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  // Reaches are drawn the way hydrographic maps draw them: solid for a perennial
+  // course, dashed when it only runs seasonally, dotted where it is culverted.
   if (kind === 'INTERMITENTE') {
-    return {
-      weight: 1.1,
-      color: '#a9c4d8',
-      opacity: 0.75,
-      fill: false,
-      dashArray: '3 4',
-      className: 'river-base',
-    };
+    return { weight: 1.1, color: '#a9c4d8', opacity: 0.75, fill: false, dashArray: '3 4', className };
   }
   if (kind === 'EMBAULADO') {
-    return {
-      weight: 1.1,
-      color: '#b3b1a8',
-      opacity: 0.8,
-      fill: false,
-      dashArray: '1 3',
-      className: 'river-base',
-    };
+    return { weight: 1.1, color: '#b3b1a8', opacity: 0.8, fill: false, dashArray: '1 3', className };
   }
   return {
-    weight: 1.5,
+    weight: carriesWave ? 1.8 : 1.5,
     color: '#9dc0dd',
     opacity: 0.9,
     fill: false,
     dashArray: undefined,
-    className: 'river-base',
-  };
-}
-
-/** The animated dash pattern laid over the very same geometry. */
-function flowStyleFor(stations: StationState[], properties: Record<string, unknown>) {
-  const kind = reachKind(properties);
-  const lengthM = Number(properties?.shape_length) || 0;
-
-  // Only water that is actually there and visible gets a current: seasonal beds
-  // may be dry, culverted stretches run underground, and a 100 m stub is too
-  // short for the drift to read as movement.
-  if (kind !== 'PERENNE' || lengthM < MIN_FLOW_REACH_M) {
-    return { stroke: false, fill: false };
-  }
-
-  const match = gaugeFor(stations, properties);
-  // Reaches with no gauge of their own drift at the network-wide pace.
-  const speedClass = match ? `river-flow--${match.config.id}` : 'river-flow--net';
-  const raised =
-    match && (match.status === 'ALERTA' || match.status === 'PRECAUCION')
-      ? statusColor[match.status]
-      : null;
-
-  return {
-    stroke: true,
-    weight: raised ? 3.2 : 2.2,
-    color: raised ?? series.level,
-    opacity: raised ? 1 : 0.75,
-    fill: false,
-    className: `river-flow ${speedClass}`,
+    className,
   };
 }
 
@@ -253,12 +177,11 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
   const mapRef = useRef<L.Map | null>(null);
   const baseLayerRef = useRef<L.TileLayer | null>(null);
   const riversLayerRef = useRef<L.Layer | null>(null);
-  const flowLayerRef = useRef<L.Layer | null>(null);
   const markersRef = useRef<Record<string, L.Marker>>({});
 
   const [basemap, setBasemap] = useState<BasemapStyle>('light-v11');
   const [showRivers, setShowRivers] = useState(true);
-  const [showFlow, setShowFlow] = useState(true);
+  const [showWave, setShowWave] = useState(true);
   const [layersOpen, setLayersOpen] = useState(false);
   const [currentZoom, setCurrentZoom] = useState(zoom);
 
@@ -268,10 +191,70 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
   stationsRef.current = stations;
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
-  /** Station states the river layers were last styled against. */
-  const lastSignatureRef = useRef<string | null>(null);
-  /** Attributes of every reach rendered so far, keyed by feature id. */
-  const featurePropsRef = useRef<Map<string, Record<string, unknown>>>(new Map());
+  const showWaveRef = useRef(showWave);
+  showWaveRef.current = showWave;
+
+  /**
+   * Colours each reach by what the gauges on its river say is happening there,
+   * and phases its crest by how long the water needs to travel that far.
+   *
+   * The style callback cannot do this: it is handed a reach's attributes but
+   * never its position, and position is exactly what decides which gauges
+   * bracket the reach and when its crest is due.
+   */
+  const applyReachStates = useCallback(() => {
+    const map = mapRef.current;
+    const container = containerRef.current;
+    if (!map || !container) return;
+
+    const paths = container.querySelectorAll<SVGPathElement>('path.river-reach--wave');
+    if (paths.length === 0) return;
+
+    const bounds = container.getBoundingClientRect();
+    const fallbackVelocity = networkVelocity(stationsRef.current);
+
+    paths.forEach((path) => {
+      // Where a reach sits never changes, so it is measured once and kept on
+      // the element; panning would otherwise move the answer.
+      if (path.dataset.lat === undefined) {
+        const length = path.getTotalLength();
+        const ctm = path.getScreenCTM();
+        if (!length || !ctm) return;
+        const mid = path.getPointAtLength(length / 2).matrixTransform(ctm);
+        const latlng = map.containerPointToLatLng([mid.x - bounds.left, mid.y - bounds.top]);
+        path.dataset.lat = String(latlng.lat);
+        path.dataset.lng = String(latlng.lng);
+      }
+
+      const latitude = Number(path.dataset.lat);
+      const longitude = Number(path.dataset.lng);
+      if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
+
+      const token =
+        [...path.classList]
+          .find((c) => c.startsWith(RIVER_TOKEN_CLASS))
+          ?.slice(RIVER_TOKEN_CLASS.length) ?? null;
+
+      const state = reachStateAt(stationsRef.current, token, latitude);
+      const { rest, crest } = reachColors(state.status);
+      const weight = state.status === 'ALERTA' ? 2.6 : state.status === 'PRECAUCION' ? 2.2 : 1.8;
+
+      path.style.setProperty('--reach-rest', rest);
+      path.style.setProperty('--reach-crest', crest);
+      path.style.setProperty('--reach-weight', `${weight}px`);
+
+      // Without a velocity there is nothing to time the crest with, so the
+      // reach keeps its colour and stays still rather than inventing a pace.
+      const velocity = state.velocityMps > 0 ? state.velocityMps : fallbackVelocity;
+      if (!showWaveRef.current || velocity <= 0) {
+        path.style.animationName = 'none';
+        return;
+      }
+
+      path.style.animationName = '';
+      path.style.animationDelay = `${waveDelaySeconds(latitude, longitude, velocity).toFixed(2)}s`;
+    });
+  }, []);
 
   // --- Map instance -------------------------------------------------------
   useEffect(() => {
@@ -322,28 +305,14 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
   }, [basemap]);
 
   // --- River network (vector tiles) ---------------------------------------
-  // Both layers read the same tiles; the second one only restrokes the very
-  // same reaches with the animated dash pattern.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
 
-    const drop = () => {
-      if (riversLayerRef.current) {
-        map.removeLayer(riversLayerRef.current);
-        riversLayerRef.current = null;
-      }
-      if (flowLayerRef.current) {
-        map.removeLayer(flowLayerRef.current);
-        flowLayerRef.current = null;
-      }
-    };
-
-    drop();
-    // Freshly built layers already carry the current states, and their index is
-    // rebuilt as their tiles render.
-    lastSignatureRef.current = null;
-    featurePropsRef.current.clear();
+    if (riversLayerRef.current) {
+      map.removeLayer(riversLayerRef.current);
+      riversLayerRef.current = null;
+    }
     if (!showRivers) return;
 
     const vectorGrid = (
@@ -351,115 +320,48 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
     ).vectorGrid;
     if (!vectorGrid?.protobuf) return;
 
-    // Panes keep the flow strokes above the base hairline no matter the order
-    // in which the two grids finish loading their tiles.
-    if (!map.getPane('riversBase')) map.createPane('riversBase').style.zIndex = '410';
-    if (!map.getPane('riversFlow')) map.createPane('riversFlow').style.zIndex = '411';
-
-    // leaflet.vectorgrid looks the style up by MVT layer name and has no
-    // wildcard, so without this proxy every reach silently falls back to
-    // Leaflet's default 3px #3388ff path. Styling is also the one place every
-    // rendered feature passes through, so the id → attributes index is built
-    // here and later drives in-place restyling.
-    const anyLayer = (fn: (p: Record<string, unknown>) => unknown) =>
-      new Proxy({} as Record<string, unknown>, {
-        get:
-          () =>
-          (properties: Record<string, unknown>) => {
-            const id = featureId(properties);
-            if (id) featurePropsRef.current.set(id, properties);
-            return fn(properties);
-          },
-        has: () => true,
+    try {
+      const layer = vectorGrid.protobuf(RIVERS_MVT_URL, {
+        rendererFactory: (L as unknown as { svg: { tile: unknown } }).svg.tile,
+        // leaflet.vectorgrid looks the style up by MVT layer name and has no
+        // wildcard, so without this proxy every reach silently falls back to
+        // Leaflet's default 3px #3388ff path.
+        vectorTileLayerStyles: new Proxy({} as Record<string, unknown>, {
+          get: () => (properties: Record<string, unknown>) =>
+            reachStyleFor(stationsRef.current, properties),
+          has: () => true,
+        }),
+        getFeatureId: (feature: { properties: Record<string, unknown> }) =>
+          featureId(feature.properties),
+        maxNativeZoom: 13,
+        maxZoom: 22,
+        minZoom: 1,
+        interactive: false,
       });
 
-    const gridOptions = (pane: string, fn: (p: Record<string, unknown>) => unknown) => ({
-      rendererFactory: (L as unknown as { svg: { tile: unknown } }).svg.tile,
-      vectorTileLayerStyles: anyLayer(fn),
-      // Required for setFeatureStyle, which restyles without refetching tiles.
-      getFeatureId: (feature: { properties: Record<string, unknown> }) =>
-        featureId(feature.properties),
-      pane,
-      maxNativeZoom: 13,
-      maxZoom: 22,
-      minZoom: 1,
-      interactive: false,
-    });
-
-    try {
-      const base = vectorGrid.protobuf(
-        RIVERS_MVT_URL,
-        gridOptions('riversBase', (p) => baseStyleFor(stationsRef.current, p))
-      );
-      base.addTo(map);
-      riversLayerRef.current = base;
-
-      if (showFlow) {
-        const flow = vectorGrid.protobuf(
-          RIVERS_MVT_URL,
-          gridOptions('riversFlow', (p) => flowStyleFor(stationsRef.current, p))
-        );
-        flow.addTo(map);
-        flowLayerRef.current = flow;
-      }
+      // Newly rendered tiles arrive unstyled by the pass, so run it as they land.
+      layer.on('load', applyReachStates);
+      layer.addTo(map);
+      riversLayerRef.current = layer;
     } catch (err) {
       console.error('No se pudo cargar la capa de ríos:', err);
     }
-  }, [showRivers, showFlow]);
+  }, [showRivers, applyReachStates]);
 
-  // Recolour the reaches when a river changes state. setFeatureStyle repaints
-  // the rendered paths in place; redraw() would refetch every tile, and with
-  // levels hovering around a threshold that ran several times a minute.
-  // Speed changes need nothing here — they ride on the CSS variables below.
-  const statusSignature = stations.map((s) => `${s.config.id}:${s.status}`).join('|');
+  // Re-run the pass on new readings and whenever the view brings in new tiles.
+  useEffect(() => {
+    applyReachStates();
+  }, [stations, showWave, currentZoom, applyReachStates]);
 
   useEffect(() => {
-    if (lastSignatureRef.current === null) {
-      // The layers were just built with these states already applied.
-      lastSignatureRef.current = statusSignature;
-      return;
-    }
-    if (lastSignatureRef.current === statusSignature) return;
-    lastSignatureRef.current = statusSignature;
-
-    type Restylable = L.Layer & { setFeatureStyle?: (id: string, style: unknown) => void };
-    const base = riversLayerRef.current as Restylable | null;
-    const flow = flowLayerRef.current as Restylable | null;
-
-    featurePropsRef.current.forEach((properties, id) => {
-      base?.setFeatureStyle?.(id, baseStyleFor(stationsRef.current, properties));
-      flow?.setFeatureStyle?.(id, flowStyleFor(stationsRef.current, properties));
-    });
-  }, [statusSignature]);
-
-  /**
-   * Animation speed per station, from the velocity its own readings imply.
-   * Published as CSS variables so the running animations retime without any
-   * of the ~200 reach paths being touched.
-   */
-  const flowDurations = useMemo(() => {
-    const vars: Record<string, string> = {};
-    const velocities: number[] = [];
-
-    stations.forEach((station) => {
-      const v = station.latest
-        ? calculateVelocity(station.latest.levelCm, station.config.settings)
-        : 0;
-      if (v > 0) velocities.push(v);
-      vars[`--flow-dur-${station.config.id}`] = `${flowDuration(
-        v,
-        station.config.lat,
-        currentZoom
-      ).toFixed(2)}s`;
-    });
-
-    const median = velocities.length
-      ? [...velocities].sort((a, b) => a - b)[Math.floor(velocities.length / 2)]
-      : 0;
-    vars['--flow-dur-net'] = `${flowDuration(median, center[0], currentZoom).toFixed(2)}s`;
-
-    return vars;
-  }, [stations, currentZoom, center]);
+    const map = mapRef.current;
+    if (!map) return;
+    const handler = () => applyReachStates();
+    map.on('moveend zoomend', handler);
+    return () => {
+      map.off('moveend zoomend', handler);
+    };
+  }, [applyReachStates]);
 
   // --- Station markers ----------------------------------------------------
   useEffect(() => {
@@ -543,15 +445,15 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
 
   return (
     <div
-      className={`relative w-full h-full${VERTEX_ORDER_IS_DOWNSTREAM ? '' : ' rivers--reversed'}`}
-      style={flowDurations as React.CSSProperties}
+      className="relative w-full h-full"
+      style={{ '--wave-period': `${WAVE_PERIOD_S}s` } as React.CSSProperties}
     >
       <div ref={containerRef} className="absolute inset-0 z-0" />
 
       {/* Layer controls */}
       <div className="absolute top-3 right-3 z-20">
         {layersOpen ? (
-          <div className="w-52 bg-surface border border-hairline rounded-lg shadow-sm animate-fadeIn">
+          <div className="w-56 bg-surface border border-hairline rounded-lg shadow-sm animate-fadeIn">
             <div className="flex items-center justify-between px-3 py-2 border-b border-hairline">
               <span className="eyebrow">Capas</span>
               <button
@@ -600,18 +502,18 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
               >
                 <input
                   type="checkbox"
-                  checked={showFlow && showRivers}
+                  checked={showWave && showRivers}
                   disabled={!showRivers}
-                  onChange={(e) => setShowFlow(e.target.checked)}
+                  onChange={(e) => setShowWave(e.target.checked)}
                   className="accent-ink w-3.5 h-3.5"
                 />
-                Animación aguas abajo
+                Propagación aguas abajo
               </label>
 
-              {showRivers && showFlow && (
+              {showRivers && showWave && (
                 <p className="text-[10px] text-ink-3 leading-relaxed border-t border-hairline pt-2">
-                  El sentido lo marca el orden de vértices de cada tramo; la velocidad sale del
-                  caudal medido en la estación de ese río.
+                  Cada tramo se tiñe del estado que miden las estaciones de su río y se realza al
+                  pasar la onda, que avanza aguas abajo a la velocidad del agua medida.
                 </p>
               )}
             </div>
@@ -643,6 +545,9 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
             </span>
           ))}
         </div>
+        <p className="text-[10px] text-ink-3 mt-1.5 pt-1.5 border-t border-hairline">
+          El realce recorre cada río aguas abajo
+        </p>
       </div>
 
       {!MAPBOX_TOKEN && (

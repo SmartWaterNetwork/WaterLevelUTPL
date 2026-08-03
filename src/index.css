@@ -203,21 +203,17 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
-   River network, drawn from the same vector tiles twice:
+   River network — one layer, one path per reach, always a continuous line.
 
-   1. a base layer — a continuous hairline, so the river always reads as a river;
-   2. a flow layer — the *same* geometry stroked with a dash pattern that is
-      animated along the path. No extra geometry is synthesised anywhere.
+   Flow is shown by *recolouring the reach*: a crest sweeps along the river,
+   lifting each reach from its resting colour to a darker step of the same hue
+   and back. The colour therefore keeps meaning what it meant (state of the
+   river), and only its timing carries the direction.
 
-   SVG walks a path in vertex order, so decreasing stroke-dashoffset carries the
-   dashes from the first vertex to the last. This dataset digitises its reaches
-   downstream (verified: the long reaches run north, which is downstream for the
-   Malacatos and the Zamora in Loja), so forward playback reads as downstream.
-   `.rivers--reversed` flips it if a future dataset digitises the other way.
-
-   One dash period is 40px; the keyframe travels exactly that, so the loop is
-   seamless and the speed is simply 40px / animation-duration. The duration
-   itself is set per reach from the measured water velocity — see MapPanel.
+   The direction comes out of the phase, not out of any motion inside a path:
+   MapPanel gives every reach an animation-delay from how long the water needs
+   to reach it, so upstream reaches crest first and the wave travels downstream.
+   Reaches without a gauge are left still.
 --------------------------------------------------------------------------- */
 .leaflet-tile,
 svg.leaflet-tile,
@@ -225,57 +221,50 @@ svg.leaflet-tile,
   overflow: visible !important;
 }
 
-@keyframes riverFlow {
-  from {
-    stroke-dashoffset: 40px;
-  }
-  to {
-    stroke-dashoffset: 0;
-  }
-}
-
-/* No stroke-dasharray here: the base layer sets its own per reach, dashed for
+/* No stroke-dasharray here: the layer sets its own per reach, dashed for
    seasonal courses and dotted for culverted ones, and a CSS rule would win. */
-path.river-base {
+path.river-reach {
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
   transition: stroke 0.4s ease, stroke-width 0.4s ease, opacity 0.4s ease;
 }
 
-path.river-flow {
-  stroke-dasharray: 10px 30px !important;
-  stroke-linecap: round !important;
-  stroke-linejoin: round !important;
-  animation: riverFlow var(--flow-duration, 3.5s) linear infinite;
+@keyframes riverCrest {
+  0% {
+    stroke: var(--reach-rest);
+    stroke-width: var(--reach-weight);
+  }
+  9% {
+    stroke: var(--reach-crest);
+    stroke-width: calc(var(--reach-weight) * 2.2);
+  }
+  17% {
+    stroke: var(--reach-crest);
+    stroke-width: calc(var(--reach-weight) * 2.2);
+  }
+  36% {
+    stroke: var(--reach-rest);
+    stroke-width: var(--reach-weight);
+  }
+  100% {
+    stroke: var(--reach-rest);
+    stroke-width: var(--reach-weight);
+  }
 }
 
-.rivers--reversed path.river-flow {
-  animation-direction: reverse;
+path.river-reach--wave {
+  stroke: var(--reach-rest);
+  stroke-width: var(--reach-weight);
+  /* The transition above would fight the keyframe on every frame. */
+  transition: none;
+  animation: riverCrest var(--wave-period, 4.5s) ease-in-out infinite;
 }
 
-/* Each reach borrows the duration of the station that gauges its river; the
-   rest of the network drifts at the network-wide pace. */
-path.river-flow--st-1 {
-  --flow-duration: var(--flow-dur-st-1, 3.5s);
-}
-path.river-flow--st-2 {
-  --flow-duration: var(--flow-dur-st-2, 3.5s);
-}
-path.river-flow--st-3 {
-  --flow-duration: var(--flow-dur-st-3, 3.5s);
-}
-path.river-flow--st-4 {
-  --flow-duration: var(--flow-dur-st-4, 3.5s);
-}
-path.river-flow--net {
-  --flow-duration: var(--flow-dur-net, 3.5s);
-}
-
-/* Motion is the whole point of this layer, so it is removed rather than frozen —
-   a stopped dash pattern would just look like a broken river. */
+/* The travelling crest is the whole point, so it is removed rather than frozen;
+   the reaches keep their resting colour and the map still reads correctly. */
 @media (prefers-reduced-motion: reduce) {
-  path.river-flow {
-    display: none;
+  path.river-reach--wave {
+    animation: none;
   }
 }
 

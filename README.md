@@ -44,26 +44,38 @@ Otros comandos: `npm run build` (producción), `npm start` (servir el build),
 
 ## La capa de ríos
 
-Se dibuja dos veces a partir de las mismas teselas vectoriales, sin geometría
-añadida: una capa base con la línea continua del cauce y, encima, una capa de
-flujo que restrea esos mismos tramos con un patrón discontinuo animado.
+Una sola capa, un trazado por tramo, siempre una línea continua. El flujo no se
+dibuja con marcas que corren por encima del cauce, sino **recoloreando el propio
+tramo**: una cresta recorre el río levantando cada tramo desde su color de
+reposo hasta un paso más oscuro del mismo tono, y de vuelta. Así el color sigue
+significando lo mismo (el estado del río) y solo su *momento* transporta el
+sentido de la corriente.
 
-- **Sentido.** SVG recorre cada trazado en el orden de sus vértices, así que
-  animar `stroke-dashoffset` a la baja lleva las marcas del primer vértice al
-  último. Se comprobó decodificando las teselas: ponderado por longitud, el
-  orden de vértices de esta capa apunta al norte (Río Malacatos −0.99, Río
-  Zamora −0.86), y el norte es aguas abajo para los ríos de Loja. La constante
-  `VERTEX_ORDER_IS_DOWNSTREAM` permite invertirlo si cambia el origen de datos.
-- **Velocidad.** Sale de la velocidad del agua que implican las lecturas
-  (`calculateVelocity`, el término v de Manning) y de la escala del mapa en el
-  zoom actual, con un factor de exageración: a escala real el arrastre sería de
-  0.03 px/s e imperceptible. Las velocidades relativas entre tramos y entre
-  niveles de zoom sí son fieles.
-- **Qué se anima.** Solo los cauces `Permanente` de más de 250 m. Los
-  intermitentes pueden estar secos y se dibujan discontinuos; los tramos
-  embaulados van bajo tierra y se dibujan punteados. Ninguno de los dos fluye.
+- **Qué color tiene cada tramo.** El estado que miden las estaciones de su río
+  (`reachStateAt` en [reachFlow.ts](src/utils/reachFlow.ts)):
+  - Con una sola estación, el tramo hereda su lectura.
+  - Con dos en el mismo río — el Zamora tiene una aguas arriba y otra aguas
+    abajo — un tramo entre ambas toma el **perfil lineal** de las dos lecturas,
+    que es la lectura de primer orden habitual de un río entre estaciones. Así,
+    si la de arriba marca 40 cm y la de abajo 80 cm, el cauce vira de Normal a
+    Precaución y a Alerta en los umbrales, en el punto donde toca.
+  - Fuera del tramo instrumentado se arrastra la lectura más cercana, sin
+    extrapolar: nada en los datos justifica prolongar la tendencia.
+  - Un río sin estación no recibe estado ni se anima. No se inventa.
+- **Hacia dónde va la cresta.** Cada tramo recibe un `animation-delay` igual al
+  tiempo que tarda el agua en llegar hasta él, así que los de aguas arriba
+  crestan antes y la onda avanza aguas abajo. La posición a lo largo de la red
+  se mide como distancia al desagüe, no como latitud: el Jipiro corre casi
+  este-oeste y su latitud apenas cambia a lo largo de su curso.
+- **A qué velocidad.** La que implican las lecturas (`calculateVelocity`, el
+  término v de Manning), con un factor de exageración: una onda de crecida
+  tarda horas en cruzar la red y a escala real no se vería mover nada. Las
+  velocidades relativas entre ríos sí son fieles.
+- **Qué se anima.** Solo los cauces `Permanente` de más de 250 m que además
+  tengan estación. Los intermitentes pueden estar secos y se dibujan
+  discontinuos; los tramos embaulados van bajo tierra y se dibujan punteados.
 - Se puede desactivar desde *Capas*, y se retira por completo con
-  `prefers-reduced-motion`.
+  `prefers-reduced-motion` dejando los colores de reposo.
 
 ## Notas
 
