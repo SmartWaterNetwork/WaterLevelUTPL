@@ -10,6 +10,7 @@ import {
 } from '../types';
 import { calculateFlowRate, convertLevelValue } from '../utils/flowCalculator';
 import { STALE_AFTER_MS, levelToStatus } from '../theme';
+import { describeError, supabase } from '../lib/supabase';
 
 /** Points pulled for the stations you are not currently looking at. */
 const BACKGROUND_POINTS = 60;
@@ -17,9 +18,19 @@ const BACKGROUND_POINTS = 60;
 /** A rise or fall smaller than this (cm) over the window still reads as stable. */
 const TREND_DEADBAND_CM = 0.5;
 
-async function fetchFeeds(settings: ChannelSettings, results: number): Promise<ThingSpeakFeed[]> {
-  const { channelId } = settings;
-  const apiKey = settings.apiKey || '';
+async function fetchFeeds(config: StationConfig, results: number): Promise<ThingSpeakFeed[]> {
+  // A station from the database has no key in the browser to fetch with: the
+  // edge function holds it and returns only the readings.
+  if (config.remote && supabase) {
+    const { data, error } = await supabase.functions.invoke<ThingSpeakResponse>('station-feed', {
+      body: { station: config.id, results },
+    });
+    if (error) throw new Error(`${config.name}: ${await describeError(error)}`);
+    return data?.feeds ?? [];
+  }
+
+  const { channelId } = config.settings;
+  const apiKey = config.settings.apiKey || '';
   const proxyUrl = `/api/thingspeak?channelId=${channelId}&apiKey=${apiKey}&results=${results}`;
 
   let data: ThingSpeakResponse | null = null;
@@ -86,7 +97,8 @@ const emptyChannel: ChannelData = { feeds: [], loading: true, error: null, fetch
 
 export interface StationNetwork {
   stations: StationState[];
-  active: StationState;
+  /** Null only while the catalogue is empty — no stations configured yet. */
+  active: StationState | null;
   activeId: string;
   setActiveId: (id: string) => void;
   /** Per-station overrides applied on top of the static config. */
@@ -110,7 +122,9 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
   const [channels, setChannels] = useState<Record<string, ChannelData>>(() =>
     Object.fromEntries(configs.map((c) => [c.id, emptyChannel]))
   );
-  const [activeId, setActiveId] = useState<string>(configs[0].id);
+  // Empty until the catalogue arrives: with the stations in the database, the
+  // first render happens before there is anything to select.
+  const [activeId, setActiveId] = useState<string>(configs[0]?.id ?? '');
   const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
   const [now, setNow] = useState<number>(() => Date.now());
 
@@ -128,6 +142,7 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
 
   const load = useCallback(async (stationIds?: string[]) => {
     const targets = resolvedRef.current.filter((c) => !stationIds || stationIds.includes(c.id));
+    if (targets.length === 0) return;
 
     setChannels((prev) => {
       const next = { ...prev };
@@ -145,7 +160,7 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
             : Math.min(config.settings.resultsCount, BACKGROUND_POINTS);
 
         try {
-          const feeds = await fetchFeeds(config.settings, points);
+          const feeds = await fetchFeeds(config, points);
           setChannels((prev) => ({
             ...prev,
             [config.id]: { feeds, loading: false, error: null, fetched: true },
@@ -169,7 +184,10 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
 
   // Initial load plus the polling loop. The shortest configured interval wins.
   const pollSeconds = useMemo(
-    () => Math.max(10, Math.min(...resolved.map((c) => c.settings.autoRefreshInterval))),
+    () =>
+      resolved.length === 0
+        ? 60
+        : Math.max(10, Math.min(...resolved.map((c) => c.settings.autoRefreshInterval))),
     [resolved]
   );
 
@@ -179,8 +197,21 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
     return () => clearInterval(timer);
   }, [load, pollSeconds]);
 
+  // Keep the selection on a station that still exists: the catalogue arrives
+  // after the first render, and an admin can delete the one you were looking at.
+  const ids = resolved.map((c) => c.id).join('|');
+  useEffect(() => {
+    const available = ids ? ids.split('|') : [];
+    if (available.length === 0) {
+      if (activeId !== '') setActiveId('');
+    } else if (!available.includes(activeId)) {
+      setActiveId(available[0]);
+    }
+  }, [ids, activeId]);
+
   // Refetch the newly selected station at full depth right away.
   useEffect(() => {
+    if (!activeId) return;
     void load([activeId]);
   }, [activeId, load]);
 
@@ -202,7 +233,7 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
           config,
           readings,
           latest,
-          status: latest ? levelToStatus(latest.levelCm) : 'OFFLINE',
+          status: latest ? levelToStatus(latest.levelCm, config.thresholds) : 'OFFLINE',
           trend: computeTrend(readings),
           isStale,
           isLoading: channel.loading,
@@ -213,7 +244,7 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
     [resolved, channels, now]
   );
 
-  const active = stations.find((s) => s.config.id === activeId) ?? stations[0];
+  const active = stations.find((s) => s.config.id === activeId) ?? stations[0] ?? null;
 
   const updateSettings = useCallback(
     (stationId: string, settings: ChannelSettings) => {
@@ -225,7 +256,8 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
   );
 
   const isRefreshing = stations.some((s) => s.isLoading);
-  const isOnline = stations.some((s) => s.error === null);
+  // Nothing configured is not the same as nothing reachable.
+  const isOnline = stations.length === 0 || stations.some((s) => s.error === null);
 
   return {
     stations,

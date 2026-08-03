@@ -77,6 +77,12 @@ export interface ChannelSettings {
   linearFactor: number; // Flow = level * linearFactor
 }
 
+/** Level thresholds (cm) that decide a station's state. */
+export interface LevelThresholds {
+  precaucion: number;
+  alerta: number;
+}
+
 /** Static description of a gauging station. Live values are never stored here. */
 export interface StationConfig {
   id: string;
@@ -86,6 +92,18 @@ export interface StationConfig {
   lat: number;
   lng: number;
   settings: ChannelSettings;
+  /** Per-station overrides; falls back to the network defaults in theme.ts. */
+  thresholds?: LevelThresholds;
+  /** False for a station taken out of service: kept on record, off the map. */
+  isActive?: boolean;
+  /**
+   * Set when the station came from the database. Its telemetry is fetched
+   * through the edge function, which holds the read key; a bundled station
+   * carries its own key and goes through the Express proxy.
+   */
+  remote?: boolean;
+  /** Database primary key. Only present on remote stations. */
+  dbId?: number;
 }
 
 /** One telemetry sample, with the derived values the UI actually plots. */

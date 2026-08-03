@@ -13,7 +13,19 @@ const baseSettings: Omit<ChannelSettings, 'channelId' | 'apiKey' | 'installation
   linearFactor: 2.5,
 };
 
-/** The four gauging stations of the Loja network (UTM zone 17S). */
+/**
+ * The four gauging stations of the Loja network (UTM zone 17S).
+ *
+ * This is the fallback list, used only when the app has no Supabase
+ * credentials. The real catalogue lives in the database, where an administrator
+ * maintains it and where the ThingSpeak read keys are kept out of reach of the
+ * browser. No key appears here: everything in this file is compiled into the
+ * bundle and served to anyone who opens the page.
+ *
+ * The consequence is that in fallback mode only the public channels answer.
+ * Channel 3440462 (Estación 04) is private and will report a read error until
+ * the app is pointed at Supabase.
+ */
 export const STATIONS: StationConfig[] = [
   {
     id: 'st-1',
@@ -25,7 +37,6 @@ export const STATIONS: StationConfig[] = [
     settings: {
       ...baseSettings,
       channelId: 3440458,
-      apiKey: 'DG5ZMO8WQHQ4D9IK',
       installationHeight: 100,
       channelWidth: 0.5,
       channelSlope: 0.002,
@@ -41,7 +52,6 @@ export const STATIONS: StationConfig[] = [
     settings: {
       ...baseSettings,
       channelId: 3425609,
-      apiKey: '',
       installationHeight: 120,
       channelWidth: 0.8,
       channelSlope: 0.0025,
@@ -57,7 +67,6 @@ export const STATIONS: StationConfig[] = [
     settings: {
       ...baseSettings,
       channelId: 3440461,
-      apiKey: '28SBPW323NCPCT3D',
       installationHeight: 90,
       channelWidth: 0.4,
       channelSlope: 0.003,
@@ -73,7 +82,6 @@ export const STATIONS: StationConfig[] = [
     settings: {
       ...baseSettings,
       channelId: 3440462,
-      apiKey: '4EFJ92F823NP50SF',
       installationHeight: 130,
       channelWidth: 1.0,
       channelSlope: 0.002,

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Bell, BookOpen, RefreshCw, Settings, Volume2, VolumeX } from 'lucide-react';
+import { Bell, BookOpen, RefreshCw, Settings, ShieldCheck, Volume2, VolumeX } from 'lucide-react';
 import { relativeTime } from '../utils/format';
 
 export type TabId = 'MAP' | 'TELEMETRY';
@@ -17,6 +17,10 @@ interface TopBarProps {
   onOpenAlerts: () => void;
   onOpenDocs: () => void;
   onOpenSettings: () => void;
+  onOpenAdmin: () => void;
+  /** Marks the administration entry point when the session carries the role. */
+  isAdmin: boolean;
+  settingsDisabled: boolean;
 }
 
 const TABS: { id: TabId; label: string }[] = [
@@ -61,6 +65,9 @@ export const TopBar: React.FC<TopBarProps> = ({
   onOpenAlerts,
   onOpenDocs,
   onOpenSettings,
+  onOpenAdmin,
+  isAdmin,
+  settingsDisabled,
 }) => (
   <header className="shrink-0 bg-surface border-b border-hairline px-3 sm:px-4 py-2 sm:py-0 sm:h-14 flex flex-wrap sm:flex-nowrap items-center gap-x-3 gap-y-2">
     <div className="order-1 flex-1 min-w-0 sm:flex-none flex items-baseline gap-2.5">
@@ -121,8 +128,19 @@ export const TopBar: React.FC<TopBarProps> = ({
         <BookOpen className="w-4 h-4" />
       </IconButton>
 
-      <IconButton label="Configuración de la estación" onClick={onOpenSettings}>
+      <IconButton
+        label="Configuración de la estación"
+        onClick={onOpenSettings}
+        disabled={settingsDisabled}
+      >
         <Settings className="w-4 h-4" />
+      </IconButton>
+
+      <IconButton
+        label={isAdmin ? 'Administración · sesión de administrador' : 'Administración'}
+        onClick={onOpenAdmin}
+      >
+        <ShieldCheck className={`w-4 h-4 ${isAdmin ? 'text-ok' : ''}`} />
       </IconButton>
     </div>
   </header>

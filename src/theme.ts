@@ -1,3 +1,5 @@
+import { LevelThresholds } from './types';
+
 /**
  * Design tokens shared by CSS (see index.css) and by everything that draws
  * outside of Tailwind: Recharts, D3, Leaflet markers, inline SVG.
@@ -45,18 +47,24 @@ export const statusLabel: Record<StatusKey, string> = {
 };
 
 /**
- * Level thresholds (cm) that drive the station state. Kept here so the map,
- * the panel and the charts can never disagree about what "Precaución" means.
+ * Network defaults for the level thresholds (cm) that drive the station state.
+ * Kept here so the map, the panel and the charts can never disagree about what
+ * "Precaución" means. A station stored in the database carries its own pair —
+ * a 58 cm rise means something different in a 0.4 m gully than in the Zamora —
+ * and these apply to anything that does not.
  */
-export const LEVEL_THRESHOLDS = {
+export const LEVEL_THRESHOLDS: LevelThresholds = {
   precaucion: 58,
   alerta: 70,
-} as const;
+};
 
-export function levelToStatus(levelCm: number | null): StatusKey {
+export function levelToStatus(
+  levelCm: number | null,
+  thresholds: LevelThresholds = LEVEL_THRESHOLDS
+): StatusKey {
   if (levelCm === null || Number.isNaN(levelCm)) return 'OFFLINE';
-  if (levelCm >= LEVEL_THRESHOLDS.alerta) return 'ALERTA';
-  if (levelCm >= LEVEL_THRESHOLDS.precaucion) return 'PRECAUCION';
+  if (levelCm >= thresholds.alerta) return 'ALERTA';
+  if (levelCm >= thresholds.precaucion) return 'PRECAUCION';
   return 'NORMAL';
 }
 

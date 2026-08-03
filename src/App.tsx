@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { AlertConfig, AlertLogItem, ChannelSettings, StationState } from './types';
-import { STATIONS, NETWORK_CENTER, NETWORK_ZOOM } from './stations';
+import { NETWORK_CENTER, NETWORK_ZOOM } from './stations';
 import { useStationNetwork } from './hooks/useStationNetwork';
+import { useStationCatalog } from './hooks/useStationCatalog';
+import { useAuth } from './hooks/useAuth';
+import { configToDraft, saveStation } from './lib/stationsApi';
 import { playAlertChime, triggerPushNotification } from './utils/flowCalculator';
 import { TabId, TopBar } from './components/TopBar';
 import { StationPanel } from './components/StationPanel';
@@ -13,6 +16,8 @@ import { Drawer } from './components/Drawer';
 import { AlertManager } from './components/AlertManager';
 import { PdfDocsViewer } from './components/PdfDocsViewer';
 import { SensorSettingsForm } from './components/SensorSettingsForm';
+import { StationForm } from './components/StationForm';
+import { AdminPanel } from './components/AdminPanel';
 
 const DEFAULT_ALERTS: AlertConfig[] = [
   {
@@ -49,10 +54,12 @@ const DEFAULT_ALERTS: AlertConfig[] = [
   },
 ];
 
-type DrawerId = 'ALERTS' | 'DOCS' | 'SETTINGS' | null;
+type DrawerId = 'ALERTS' | 'DOCS' | 'SETTINGS' | 'ADMIN' | null;
 
 export default function App() {
-  const network = useStationNetwork(STATIONS);
+  const auth = useAuth();
+  const catalog = useStationCatalog();
+  const network = useStationNetwork(catalog.stations);
   const { stations, active, activeId, setActiveId, updateSettings } = network;
 
   const [tab, setTab] = useState<TabId>('MAP');
@@ -61,6 +68,11 @@ export default function App() {
   const [logs, setLogs] = useState<AlertLogItem[]>([]);
   const [soundMuted, setSoundMuted] = useState(false);
   const [banner, setBanner] = useState<string | null>(null);
+  const [savingStation, setSavingStation] = useState(false);
+  const [stationError, setStationError] = useState<string | null>(null);
+
+  /** True when this station's settings live in the database and may be edited. */
+  const canEditStation = Boolean(auth.isAdmin && active?.config.remote && active?.config.dbId);
 
   // Every reading is evaluated once, across all stations.
   const seenRef = useRef<Set<string>>(new Set());
@@ -126,6 +138,8 @@ export default function App() {
     setDrawer(null);
   };
 
+  const stationsAreEmpty = !catalog.isLoading && stations.length === 0;
+
   return (
     <div className="h-full flex flex-col bg-page text-ink">
       <TopBar
@@ -141,6 +155,9 @@ export default function App() {
         onOpenAlerts={() => setDrawer('ALERTS')}
         onOpenDocs={() => setDrawer('DOCS')}
         onOpenSettings={() => setDrawer('SETTINGS')}
+        onOpenAdmin={() => setDrawer('ADMIN')}
+        isAdmin={auth.isAdmin}
+        settingsDisabled={!active}
       />
 
       {banner && (
@@ -161,6 +178,27 @@ export default function App() {
         </div>
       )}
 
+      {stationsAreEmpty && (
+        <div className="px-4 py-2 bg-[#f2f1ee] border-b border-hairline text-[12px] text-ink-2 shrink-0">
+          No hay estaciones en servicio.{' '}
+          <button
+            type="button"
+            onClick={() => setDrawer('ADMIN')}
+            className="underline underline-offset-2 hover:text-ink"
+          >
+            Darlas de alta desde administración
+          </button>
+          .
+        </div>
+      )}
+
+      {catalog.source === 'local' && catalog.error && (
+        <div className="px-4 py-2 bg-[#fdf3f3] border-b border-[#f2d5d5] text-[12px] text-ink-2 shrink-0">
+          No se pudo leer el catálogo de estaciones; se está mostrando la lista incluida en el
+          código. <span className="text-ink-3">{catalog.error}</span>
+        </div>
+      )}
+
       {/* The map/telemetry area and the station rail sit side by side on desktop.
           On phones they stack and the whole column scrolls, map first. */}
       <main className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden thin-scroll">
@@ -175,7 +213,7 @@ export default function App() {
                 zoom={NETWORK_ZOOM}
               />
             </div>
-          ) : (
+          ) : active ? (
             <div className="lg:h-full lg:overflow-y-auto thin-scroll p-3 sm:p-4 space-y-4">
               <Hydrograph
                 station={active}
@@ -186,6 +224,10 @@ export default function App() {
                 }
               />
               <SensorSchematic station={active} />
+            </div>
+          ) : (
+            <div className="h-full flex items-center justify-center p-8 text-[12px] text-ink-3">
+              {catalog.isLoading ? 'Cargando estaciones…' : 'No hay ninguna estación seleccionada.'}
             </div>
           )}
         </div>
@@ -201,13 +243,15 @@ export default function App() {
         title="Alertas e incidentes"
         subtitle="Reglas de disparo y registro de eventos de toda la red"
       >
-        <AlertManager
-          alerts={alerts}
-          onUpdateAlerts={setAlerts}
-          logs={logs}
-          onClearLogs={() => setLogs([])}
-          settings={active.config.settings}
-        />
+        {active && (
+          <AlertManager
+            alerts={alerts}
+            onUpdateAlerts={setAlerts}
+            logs={logs}
+            onClearLogs={() => setLogs([])}
+            settings={active.config.settings}
+          />
+        )}
       </Drawer>
 
       <Drawer
@@ -221,17 +265,65 @@ export default function App() {
       </Drawer>
 
       <Drawer
-        isOpen={drawer === 'SETTINGS'}
+        isOpen={drawer === 'SETTINGS' && active !== null}
         onClose={() => setDrawer(null)}
-        title={`Configuración · ${active.config.riverName}`}
-        subtitle="Canal de telemetría, geometría del cauce y unidades"
+        title={`Configuración · ${active?.config.riverName ?? ''}`}
+        subtitle={
+          canEditStation
+            ? 'Se guarda en la base de datos para toda la red'
+            : 'Ajustes de esta sesión; no se guardan en la base de datos'
+        }
         width="max-w-xl"
       >
-        <SensorSettingsForm
-          settings={active.config.settings}
-          onSave={handleSaveSettings}
-          onCancel={() => setDrawer(null)}
-        />
+        {active &&
+          // An admin editing a database station changes it for everyone, so the
+          // drawer opens the full record. Anyone else is only adjusting their
+          // own view, and gets the settings that make sense to change alone.
+          (canEditStation ? (
+            <StationForm
+              key={active.config.id}
+              draft={configToDraft(active.config)}
+              isNew={false}
+              busy={savingStation}
+              error={stationError}
+              neighbours={catalog.allStations
+                .filter((s) => s.dbId !== active.config.dbId)
+                .map((s) => ({ lat: s.lat, lng: s.lng }))}
+              onCancel={() => {
+                setStationError(null);
+                setDrawer(null);
+              }}
+              onSave={async (draft) => {
+                setSavingStation(true);
+                setStationError(null);
+                try {
+                  await saveStation(active.config.dbId!, draft);
+                  await catalog.reload();
+                  setDrawer(null);
+                } catch (err) {
+                  setStationError(err instanceof Error ? err.message : String(err));
+                } finally {
+                  setSavingStation(false);
+                }
+              }}
+            />
+          ) : (
+            <SensorSettingsForm
+              settings={active.config.settings}
+              onSave={handleSaveSettings}
+              onCancel={() => setDrawer(null)}
+            />
+          ))}
+      </Drawer>
+
+      <Drawer
+        isOpen={drawer === 'ADMIN'}
+        onClose={() => setDrawer(null)}
+        title="Administración"
+        subtitle="Cuenta, permisos y alta de estaciones"
+        width="max-w-xl"
+      >
+        <AdminPanel auth={auth} catalog={catalog} />
       </Drawer>
     </div>
   );

@@ -22,5 +22,7 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  // supabase/functions runs on Deno, with its own globals and jsr: imports.
+  "exclude": ["node_modules", "dist", "supabase"]
 }

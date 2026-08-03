@@ -17,17 +17,21 @@ La interfaz tiene dos vistas y un panel fijo de estaciones:
 - **Panel lateral** — las cuatro estaciones con su última lectura, tendencia y
   una sparkline. Siempre visible; es también el selector de estación.
 
-Alertas, manuales del sensor y configuración se abren en paneles laterales desde
-los iconos de la cabecera, para no competir con el mapa.
+Alertas, manuales del sensor, configuración y administración se abren en paneles
+laterales desde los iconos de la cabecera, para no competir con el mapa.
 
 ### Estructura del código
 
 | Ruta | Qué contiene |
 |---|---|
-| `src/stations.ts` | Definición de las cuatro estaciones y sus canales |
-| `src/theme.ts` | Tokens de color, umbrales de nivel y ventana de obsolescencia |
+| `src/stations.ts` | Lista de reserva de estaciones, solo si no hay base de datos |
+| `src/theme.ts` | Tokens de color, umbrales por defecto y ventana de obsolescencia |
+| `src/lib/` | Cliente de Supabase, tipos generados y acceso al catálogo |
+| `src/hooks/useStationCatalog.ts` | Carga del catálogo de estaciones |
 | `src/hooks/useStationNetwork.ts` | Sondeo de los canales y estado derivado de cada estación |
+| `src/hooks/useAuth.ts` | Sesión, rol y alta del primer administrador |
 | `src/components/` | Vistas y controles |
+| `supabase/functions/station-feed/` | Función que resuelve el canal y su clave de lectura |
 | `server.ts` | Servidor Express con proxy a ThingSpeak y Vite en desarrollo |
 
 ## Ejecutar en local
@@ -35,12 +39,60 @@ los iconos de la cabecera, para no competir con el mapa.
 **Requisitos:** Node.js 20+
 
 1. Instalar dependencias: `npm install`
-2. Copiar `.env.example` a `.env` y rellenar `VITE_MAPBOX_TOKEN`.
-   Sin token la aplicación funciona igual, pero usa OpenStreetMap como mapa base.
+2. Copiar `.env.example` a `.env` y rellenar:
+   - `VITE_MAPBOX_TOKEN` — sin él la aplicación funciona igual, pero usa
+     OpenStreetMap como mapa base.
+   - `VITE_SUPABASE_URL` y `VITE_SUPABASE_PUBLISHABLE_KEY` — sin ellos la
+     aplicación arranca con la lista de `src/stations.ts` y no se pueden
+     administrar las estaciones.
 3. Arrancar: `npm run dev` → http://localhost:3000
 
 Otros comandos: `npm run build` (producción), `npm start` (servir el build),
 `npm run lint` (comprobación de tipos).
+
+## Estaciones y administración
+
+Las estaciones viven en la base de datos, no en el código: un administrador las
+da de alta, las edita y las retira desde el panel de **Administración**, y el
+mapa, los umbrales y el cálculo del caudal se recargan a partir de ahí.
+
+De cada estación se guarda su posición como punto **PostGIS**, sus umbrales de
+precaución y alerta —58 cm no significan lo mismo en una quebrada de 0,4 m que
+en el Zamora—, el canal de telemetría y los parámetros hidráulicos con los que
+el nivel se convierte en caudal.
+
+### Quién puede cambiar qué
+
+| | Leer estaciones | Leer claves | Escribir |
+|---|---|---|---|
+| Visitante (`anon`) | sí | no | no |
+| Registrado sin rol | sí | no | no |
+| `admin` | sí | sí | sí |
+
+Lo decide la base de datos, no la interfaz: cada tabla tiene RLS y los permisos
+de escritura están revocados para `anon`. Que el panel esconda un botón es una
+cortesía; lo que impide el cambio es la política.
+
+### El primer administrador
+
+No hay ninguno al desplegar, y solo un administrador puede nombrar a otro. Para
+salir de ese círculo, `public.claim_admin()` concede el rol una única vez, y
+solo si se cumplen las dos condiciones a la vez: que la red todavía no tenga
+administrador y que la dirección de quien lo pide esté en la lista de
+`private.admin_bootstrap`, fuera del alcance de la API. En la práctica: crea la
+cuenta desde el panel de Administración, confirma el correo, y aparecerá el
+botón para activarla. A partir de ahí el rol se asigna en `public.user_roles`.
+
+### Dónde están las claves de ThingSpeak
+
+En `station_channel_secrets`, una tabla a la que `anon` no tiene ni permiso de
+lectura. El navegador nunca las ve: la telemetría pasa por la función
+`station-feed`, que resuelve el canal y su clave del lado del servidor y
+devuelve solo las lecturas. Hace falta porque no todos los canales son
+públicos — el 3440462 responde `-1` sin su clave.
+
+Sin credenciales de Supabase la aplicación cae en la lista de `src/stations.ts`,
+que no lleva claves; en ese modo solo responden los canales públicos.
 
 ## La capa de ríos
 
@@ -108,9 +160,12 @@ permanentes, discontinuos los intermitentes y punteados los tramos embaulados.
 - Las lecturas nunca se inventan: si un canal responde sin datos, la estación se
   muestra como «Sin datos» en lugar de mostrar un valor de ejemplo. Una lectura
   con más de una hora se marca como obsoleta.
-- Los umbrales de estado (precaución 58 cm, alerta 70 cm) viven en `src/theme.ts`
-  y los comparten el mapa, el panel y los gráficos. Las reglas de alerta con
-  notificación y sonido se configuran aparte, desde el panel de alertas.
-- Las claves de lectura de ThingSpeak están en `src/stations.ts`. Son claves de
-  solo lectura de canales públicos; si alguno pasa a ser privado, conviene
-  moverlas a variables de entorno.
+- Los umbrales de estado son propios de cada estación y se editan desde
+  administración; `src/theme.ts` solo guarda los de reserva (precaución 58 cm,
+  alerta 70 cm). Los comparten el mapa, el panel y los gráficos. Las reglas de
+  alerta con notificación y sonido siguen configurándose desde el panel de
+  alertas y todavía no se guardan en la base de datos.
+- Las claves de lectura de ThingSpeak estuvieron en `src/stations.ts` y por
+  tanto en el paquete servido al navegador y en el historial de git. Ahora viven
+  solo en la base de datos, pero conviene regenerarlas en ThingSpeak: lo que
+  estuvo publicado, publicado está.

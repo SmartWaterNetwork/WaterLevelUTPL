@@ -94,7 +94,11 @@ const StationRow: React.FC<{
             <Sparkline
               values={levels}
               color={series.level}
-              threshold={config.settings.levelUnit === 'cm' ? LEVEL_THRESHOLDS.alerta : undefined}
+              threshold={
+                config.settings.levelUnit === 'cm'
+                  ? (config.thresholds ?? LEVEL_THRESHOLDS).alerta
+                  : undefined
+              }
               width={104}
               height={30}
               className="shrink-0 mb-0.5"
@@ -132,6 +136,16 @@ const StationRow: React.FC<{
 export const StationPanel: React.FC<StationPanelProps> = ({ stations, activeId, onSelect }) => {
   const withData = stations.filter((s) => s.latest !== null).length;
 
+  // Thresholds are per station. Spelling out one pair only makes sense while
+  // the whole network shares it; otherwise the footer would be quietly wrong.
+  const pairs = new Set(
+    stations.map((s) => {
+      const t = s.config.thresholds ?? LEVEL_THRESHOLDS;
+      return `${t.precaucion}/${t.alerta}`;
+    })
+  );
+  const shared = pairs.size === 1 ? (stations[0].config.thresholds ?? LEVEL_THRESHOLDS) : null;
+
   return (
     <aside className="flex flex-col h-full bg-surface border-l border-hairline">
       <div className="px-4 py-3 border-b border-hairline">
@@ -153,8 +167,9 @@ export const StationPanel: React.FC<StationPanelProps> = ({ stations, activeId, 
       </div>
 
       <div className="px-4 py-3 border-t border-hairline text-[10px] text-ink-3 leading-relaxed">
-        Umbrales de nivel · Precaución {LEVEL_THRESHOLDS.precaucion} cm · Alerta{' '}
-        {LEVEL_THRESHOLDS.alerta} cm
+        {shared
+          ? `Umbrales de nivel · Precaución ${shared.precaucion} cm · Alerta ${shared.alerta} cm`
+          : 'Umbrales de nivel propios de cada estación'}
       </div>
     </aside>
   );
