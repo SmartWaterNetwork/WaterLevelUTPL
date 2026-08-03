@@ -14,6 +14,7 @@ import { Download, Table2, LineChart as LineChartIcon, RefreshCw } from 'lucide-
 import { AlertConfig, Reading, StationState } from '../types';
 import { ink, series } from '../theme';
 import { axisDateTime, fullDateTime, num } from '../utils/format';
+import { verticalScale } from '../utils/chartScale';
 
 interface HydrographProps {
   station: StationState;
@@ -76,6 +77,16 @@ const MeasureChart: React.FC<{
 }> = ({ data, dataKey, name, unit, color, height, showXLabels, showBrush, thresholds = [] }) => {
   const gradientId = `fill-${dataKey}`;
 
+  const scale = useMemo(() => verticalScale(data.map((d) => d[dataKey])), [data, dataKey]);
+
+  // Enough room for the longest label: with decimals the ticks grow, and a
+  // clipped "46.5" is the same illegible axis by another route.
+  const axisWidth = useMemo(() => {
+    if (!scale) return 46;
+    const longest = Math.max(...scale.ticks.map((t) => num(t, scale.decimals).length));
+    return Math.max(40, longest * 6 + 14);
+  }, [scale]);
+
   return (
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
@@ -111,9 +122,11 @@ const MeasureChart: React.FC<{
             tick={{ fill: ink.muted, fontSize: 10 }}
             tickLine={false}
             axisLine={false}
-            width={46}
-            domain={['auto', 'auto']}
-            tickFormatter={(v: number) => num(v, 0)}
+            width={axisWidth}
+            domain={scale ? scale.domain : ['auto', 'auto']}
+            ticks={scale ? scale.ticks : undefined}
+            tickFormatter={(v: number) => num(v, scale?.decimals ?? 0)}
+            allowDecimals
           />
 
           <Tooltip
