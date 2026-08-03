@@ -203,8 +203,21 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
-   Vector-tile river reaches. Only reaches in a raised state animate; a normal
-   reach is a still hairline so movement always means something.
+   River network, drawn from the same vector tiles twice:
+
+   1. a base layer — a continuous hairline, so the river always reads as a river;
+   2. a flow layer — the *same* geometry stroked with a dash pattern that is
+      animated along the path. No extra geometry is synthesised anywhere.
+
+   SVG walks a path in vertex order, so decreasing stroke-dashoffset carries the
+   dashes from the first vertex to the last. This dataset digitises its reaches
+   downstream (verified: the long reaches run north, which is downstream for the
+   Malacatos and the Zamora in Loja), so forward playback reads as downstream.
+   `.rivers--reversed` flips it if a future dataset digitises the other way.
+
+   One dash period is 40px; the keyframe travels exactly that, so the loop is
+   seamless and the speed is simply 40px / animation-duration. The duration
+   itself is set per reach from the measured water velocity — see MapPanel.
 --------------------------------------------------------------------------- */
 .leaflet-tile,
 svg.leaflet-tile,
@@ -214,37 +227,55 @@ svg.leaflet-tile,
 
 @keyframes riverFlow {
   from {
-    stroke-dashoffset: 240px;
+    stroke-dashoffset: 40px;
   }
   to {
     stroke-dashoffset: 0;
   }
 }
 
-path.river-normal {
-  stroke-dasharray: none !important;
+/* No stroke-dasharray here: the base layer sets its own per reach, dashed for
+   seasonal courses and dotted for culverted ones, and a CSS rule would win. */
+path.river-base {
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
   transition: stroke 0.4s ease, stroke-width 0.4s ease, opacity 0.4s ease;
 }
 
-path.river-warn,
-path.river-alert {
-  stroke-dasharray: 70px 170px !important;
+path.river-flow {
+  stroke-dasharray: 10px 30px !important;
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
-  animation: riverFlow 1.6s linear infinite;
+  animation: riverFlow var(--flow-duration, 3.5s) linear infinite;
 }
 
-path.river-alert {
-  animation-duration: 0.9s;
+.rivers--reversed path.river-flow {
+  animation-direction: reverse;
 }
 
+/* Each reach borrows the duration of the station that gauges its river; the
+   rest of the network drifts at the network-wide pace. */
+path.river-flow--st-1 {
+  --flow-duration: var(--flow-dur-st-1, 3.5s);
+}
+path.river-flow--st-2 {
+  --flow-duration: var(--flow-dur-st-2, 3.5s);
+}
+path.river-flow--st-3 {
+  --flow-duration: var(--flow-dur-st-3, 3.5s);
+}
+path.river-flow--st-4 {
+  --flow-duration: var(--flow-dur-st-4, 3.5s);
+}
+path.river-flow--net {
+  --flow-duration: var(--flow-dur-net, 3.5s);
+}
+
+/* Motion is the whole point of this layer, so it is removed rather than frozen —
+   a stopped dash pattern would just look like a broken river. */
 @media (prefers-reduced-motion: reduce) {
-  path.river-warn,
-  path.river-alert {
-    animation: none;
-    stroke-dasharray: none !important;
+  path.river-flow {
+    display: none;
   }
 }
 

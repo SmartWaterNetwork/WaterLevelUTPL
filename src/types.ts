@@ -85,6 +85,12 @@ export interface StationConfig {
   locationName: string; // UTM reference
   lat: number;
   lng: number;
+  /**
+   * Lowercase, unaccented fragments used to tie this station to the reaches of
+   * the river-network layer, whose `nombre` field spells names differently
+   * ("Rio Zamora", "Rio Jipiro"). Matching on the display name alone fails.
+   */
+  matchTokens: string[];
   settings: ChannelSettings;
 }
 

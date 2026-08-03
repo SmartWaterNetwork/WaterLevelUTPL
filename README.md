@@ -42,6 +42,29 @@ los iconos de la cabecera, para no competir con el mapa.
 Otros comandos: `npm run build` (producción), `npm start` (servir el build),
 `npm run lint` (comprobación de tipos).
 
+## La capa de ríos
+
+Se dibuja dos veces a partir de las mismas teselas vectoriales, sin geometría
+añadida: una capa base con la línea continua del cauce y, encima, una capa de
+flujo que restrea esos mismos tramos con un patrón discontinuo animado.
+
+- **Sentido.** SVG recorre cada trazado en el orden de sus vértices, así que
+  animar `stroke-dashoffset` a la baja lleva las marcas del primer vértice al
+  último. Se comprobó decodificando las teselas: ponderado por longitud, el
+  orden de vértices de esta capa apunta al norte (Río Malacatos −0.99, Río
+  Zamora −0.86), y el norte es aguas abajo para los ríos de Loja. La constante
+  `VERTEX_ORDER_IS_DOWNSTREAM` permite invertirlo si cambia el origen de datos.
+- **Velocidad.** Sale de la velocidad del agua que implican las lecturas
+  (`calculateVelocity`, el término v de Manning) y de la escala del mapa en el
+  zoom actual, con un factor de exageración: a escala real el arrastre sería de
+  0.03 px/s e imperceptible. Las velocidades relativas entre tramos y entre
+  niveles de zoom sí son fieles.
+- **Qué se anima.** Solo los cauces `Permanente` de más de 250 m. Los
+  intermitentes pueden estar secos y se dibujan discontinuos; los tramos
+  embaulados van bajo tierra y se dibujan punteados. Ninguno de los dos fluye.
+- Se puede desactivar desde *Capas*, y se retira por completo con
+  `prefers-reduced-motion`.
+
 ## Notas
 
 - Las lecturas nunca se inventan: si un canal responde sin datos, la estación se

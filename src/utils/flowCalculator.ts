@@ -78,6 +78,31 @@ export function calculateFlowRate(
 }
 
 /**
+ * Mean flow velocity in the channel, in m/s.
+ *
+ * With Manning this is the equation's own velocity term, v = (1/n)·R^(2/3)·S^(1/2);
+ * for the other conversions it falls back to continuity, v = Q / A. It is what
+ * drives how fast the river animation moves downstream on the map.
+ */
+export function calculateVelocity(rawLevelCm: number, settings: ChannelSettings): number {
+  const depthM = Math.max(0, rawLevelCm / 100);
+  if (depthM <= 0) return 0;
+
+  const B = Math.max(0.1, settings.channelWidth || 0.5);
+
+  if (settings.conversionMode === 'MANNING') {
+    const n = Math.max(0.005, settings.manningN || 0.013);
+    const S = Math.max(0.0001, settings.channelSlope || 0.002);
+    const R = (B * depthM) / (B + 2 * depthM);
+    return (1 / n) * Math.pow(R, 2 / 3) * Math.sqrt(S);
+  }
+
+  // calculateFlowRate returns the configured unit, so ask it for L/s explicitly.
+  const flowLps = calculateFlowRate(rawLevelCm, { ...settings, flowUnit: 'L/s' });
+  return flowLps / 1000 / (B * depthM);
+}
+
+/**
  * Converts flow rate from L/s to desired unit.
  */
 export function convertFlowUnit(flowLps: number, targetUnit: FlowUnit): number {
