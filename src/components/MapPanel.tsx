@@ -36,8 +36,28 @@ const BASEMAPS: { id: BasemapStyle; label: string }[] = [
   { id: 'dark-v11', label: 'Oscuro' },
 ];
 
-const MAPBOX_TOKEN =
-  (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_MAPBOX_TOKEN ?? '';
+/**
+ * Recovers the first valid public Mapbox token if an env var is malformed
+ * (for example duplicated as "pk...pk...").
+ */
+function normalizeMapboxToken(raw: string): string {
+  const value = raw.trim();
+  if (!value) return '';
+
+  const firstPk = value.indexOf('pk.');
+  if (firstPk < 0) return '';
+
+  const secondPk = value.indexOf('pk.', firstPk + 3);
+  const candidate = (secondPk >= 0 ? value.slice(firstPk, secondPk) : value.slice(firstPk)).trim();
+
+  // Keep the checks intentionally light: we only need to avoid obviously
+  // broken values and let the existing OSM fallback handle empty tokens.
+  return candidate.startsWith('pk.') && candidate.length > 20 ? candidate : '';
+}
+
+const MAPBOX_TOKEN = normalizeMapboxToken(
+  (import.meta as unknown as { env?: Record<string, string> }).env?.VITE_MAPBOX_TOKEN ?? ''
+);
 
 const MAPBOX_ATTRIBUTION =
   '© <a href="https://www.mapbox.com/about/maps/" target="_blank" rel="noreferrer">Mapbox</a> © <a href="http://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a>';
