@@ -44,38 +44,64 @@ Otros comandos: `npm run build` (producción), `npm start` (servir el build),
 
 ## La capa de ríos
 
-Una sola capa, un trazado por tramo, siempre una línea continua. El flujo no se
-dibuja con marcas que corren por encima del cauce, sino **recoloreando el propio
-tramo**: una cresta recorre el río levantando cada tramo desde su color de
-reposo hasta un paso más oscuro del mismo tono, y de vuelta. Así el color sigue
-significando lo mismo (el estado del río) y solo su *momento* transporta el
-sentido de la corriente.
+Una sola capa, un trazado por tramo, siempre una línea continua. Lo que se
+anima no son marcas corriendo por encima del cauce, sino **el color del propio
+tramo**: una cresta lo recorre levantándolo desde su color de reposo hasta un
+paso más oscuro del mismo tono, y de vuelta.
 
-- **Qué color tiene cada tramo.** El estado que miden las estaciones de su río
-  (`reachStateAt` en [reachFlow.ts](src/utils/reachFlow.ts)):
-  - Con una sola estación, el tramo hereda su lectura.
-  - Con dos en el mismo río — el Zamora tiene una aguas arriba y otra aguas
-    abajo — un tramo entre ambas toma el **perfil lineal** de las dos lecturas,
-    que es la lectura de primer orden habitual de un río entre estaciones. Así,
-    si la de arriba marca 40 cm y la de abajo 80 cm, el cauce vira de Normal a
-    Precaución y a Alerta en los umbrales, en el punto donde toca.
-  - Fuera del tramo instrumentado se arrastra la lectura más cercana, sin
-    extrapolar: nada en los datos justifica prolongar la tendencia.
-  - Un río sin estación no recibe estado ni se anima. No se inventa.
-- **Hacia dónde va la cresta.** Cada tramo recibe un `animation-delay` igual al
-  tiempo que tarda el agua en llegar hasta él, así que los de aguas arriba
-  crestan antes y la onda avanza aguas abajo. La posición a lo largo de la red
-  se mide como distancia al desagüe, no como latitud: el Jipiro corre casi
-  este-oeste y su latitud apenas cambia a lo largo de su curso.
-- **A qué velocidad.** La que implican las lecturas (`calculateVelocity`, el
-  término v de Manning), con un factor de exageración: una onda de crecida
-  tarda horas en cruzar la red y a escala real no se vería mover nada. Las
-  velocidades relativas entre ríos sí son fieles.
-- **Qué se anima.** Solo los cauces `Permanente` de más de 250 m que además
-  tengan estación. Los intermitentes pueden estar secos y se dibujan
-  discontinuos; los tramos embaulados van bajo tierra y se dibujan punteados.
+**En reposo la red está quieta.** Solo se anima el tramo aguas abajo de una
+estación en Precaución o Alerta, así que cualquier movimiento en el mapa
+significa un aviso y señala hacia dónde va el agua.
+
+### Qué tramos corresponden a cada estación
+
+Una estación solo habla del agua que ya ha pasado por ella, así que describe el
+canal **aguas abajo** de sí misma hasta la siguiente estación. Esa es la regla:
+cada tramo lo gobierna la estación más cercana aguas arriba, y un tramo sin
+ninguna estación por encima no recibe estado.
+
+Los nombres de las estaciones **no** se usan para esto. La geometría de la capa
+muestra que las cuatro no están sobre el cauce que su nombre dice — la
+Estación 02, "Río Zamora", está a 10 m de la Quebrada Shushuhuaycu y a cientos
+de metros del Zamora — así que la atribución se hace por posición sobre la red.
+Conviene revisar esos nombres o esas coordenadas en el origen.
+
+### Cómo se arma la red ([riverNetwork.ts](src/utils/riverNetwork.ts))
+
+Dos hechos de la capa, medidos y no supuestos, obligan al método:
+
+- **El sentido de cada arco es arbitrario.** Está digitalizada para dibujar, no
+  para enrutar: solo 57 de 192 tramos enlazan extremo con inicio del siguiente,
+  y otros tantos se tocan cabeza con cabeza. El sentido no se lee de la
+  geometría, se impone.
+- **Las confluencias no caen en los extremos.** Apenas el 42% de los extremos
+  coincide con otro: los afluentes desembocan a media línea del cauce
+  principal. Por eso los tramos se unen probando cada extremo contra la *línea*
+  de los demás, no contra sus extremos.
+
+Con los tramos unidos, cada componente se enraíza en su punto más al norte —
+por donde drena, ya que la cuenca de Loja drena al norte — y un barrido desde
+esa raíz deja a cada tramo apuntando al que tiene debajo. El barrido va **por
+distancia acumulada, no por número de saltos**: en anchura seguiría el camino
+con menos confluencias y atajaría por la cuenca, mientras que el agua sigue el
+cauce más corto.
+
+### La onda
+
+- **Sentido.** Cada tramo recibe un `animation-delay` igual al tiempo que tarda
+  el agua en llegar hasta él desde su estación, así que la cresta sale de la
+  estación y avanza aguas abajo.
+- **Velocidad.** La que implican las lecturas (`calculateVelocity`, el término v
+  de Manning), con un factor de exageración: una onda de crecida tarda horas en
+  cruzar la red y a escala real no se vería mover nada. Las velocidades
+  relativas entre ríos sí son fieles.
+- Seleccionar una estación resalta su tramo aunque no haya aviso, para ver de
+  qué responde cada una.
 - Se puede desactivar desde *Capas*, y se retira por completo con
   `prefers-reduced-motion` dejando los colores de reposo.
+
+Los cauces se dibujan como los dibuja un mapa hidrográfico: continuos los
+permanentes, discontinuos los intermitentes y punteados los tramos embaulados.
 
 ## Notas
 

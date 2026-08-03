@@ -5,11 +5,19 @@ import { StationState } from '../types';
 import { status as statusColor, statusLabel } from '../theme';
 import {
   WAVE_PERIOD_S,
-  networkVelocity,
+  isRaised,
   reachColors,
-  reachStateAt,
+  reachWeight,
+  statusOf,
+  velocityOf,
   waveDelaySeconds,
 } from '../utils/reachFlow';
+import {
+  attributeDownstream,
+  buildReaches,
+  orientNetwork,
+  GaugePoint,
+} from '../utils/riverNetwork';
 import { num } from '../utils/format';
 import { Layers, X } from 'lucide-react';
 
@@ -41,11 +49,8 @@ const OSM_ATTRIBUTION =
 const RIVERS_MVT_URL =
   'https://api.ellipsis-drive.com/v3/ogc/mvt/c001410b-232a-43c7-945a-2989b88f0a6d/{z}/{x}/{y}?timestampId=6890e507-e7e8-45c7-82c8-0c411563fc5d&token=epat_g6H3SbsolcBukmxPlYifqUkp5BdyUYK3e4n09WUeT1GlXP1lUFAwIDfR1JN6fRjh';
 
-/** Below this the reach is too short for a crest to read as it passes. */
-const MIN_WAVE_REACH_M = 250;
-
-/** Prefix of the class that records which gauged river a reach belongs to. */
-const RIVER_TOKEN_CLASS = 'river-of-';
+/** A station further than this from any reach is not on the mapped network. */
+const MAX_SNAP_PX = 40;
 
 /** Lowercase and strip diacritics so "Río" matches the layer's "Rio". */
 function normalize(value: unknown): string {
@@ -53,6 +58,11 @@ function normalize(value: unknown): string {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase();
+}
+
+/** Ground resolution of the Web Mercator tile grid, in metres per pixel. */
+function metresPerPixel(latitude: number, zoom: number): number {
+  return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / Math.pow(2, zoom);
 }
 
 /** Stable identity of a reach, so it can be restyled without a refetch. */
@@ -74,58 +84,43 @@ function reachKind(properties: Record<string, unknown>): ReachKind {
   return 'PERENNE';
 }
 
-/** Which gauged river a reach belongs to, from the layer's `nombre` field. */
-function riverTokenFor(
-  stations: StationState[],
-  properties: Record<string, unknown>
-): string | null {
-  const name = normalize(properties?.nombre);
-  if (!name || name === 'none') return null;
-  for (const station of stations) {
-    const hit = station.config.matchTokens.find((token) => name.includes(token));
-    if (hit) return hit;
-  }
-  return null;
-}
-
 /**
- * How a reach is drawn from its attributes alone. Reaches that carry the wave
- * get their colours finished by `applyReachStates`, the only place that knows
- * where each one sits along its river.
+ * How a reach is drawn from its attributes alone, the way hydrographic maps
+ * draw it: solid for a perennial course, dashed when it only runs seasonally,
+ * dotted where the channel is culverted. Which gauge governs it, and whether it
+ * is under warning, is decided later by `applyReachStates` — that needs the
+ * reach's position on the network, which the style callback is never given.
  */
-function reachStyleFor(stations: StationState[], properties: Record<string, unknown>) {
+function reachStyleFor(properties: Record<string, unknown>) {
   const kind = reachKind(properties);
-  const token = riverTokenFor(stations, properties);
-  const lengthM = Number(properties?.shape_length) || 0;
 
-  // Only water that is there, visible and gauged can carry a crest: seasonal
-  // beds may be dry, culverted stretches run underground, a 100 m stub is too
-  // short to read, and an ungauged creek has no state to report.
-  const carriesWave = kind === 'PERENNE' && lengthM >= MIN_WAVE_REACH_M && token !== null;
-
-  const className = [
-    'river-reach',
-    carriesWave ? 'river-reach--wave' : '',
-    token ? `${RIVER_TOKEN_CLASS}${token}` : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  // Reaches are drawn the way hydrographic maps draw them: solid for a perennial
-  // course, dashed when it only runs seasonally, dotted where it is culverted.
   if (kind === 'INTERMITENTE') {
-    return { weight: 1.1, color: '#a9c4d8', opacity: 0.75, fill: false, dashArray: '3 4', className };
+    return {
+      weight: 1.1,
+      color: '#a9c4d8',
+      opacity: 0.75,
+      fill: false,
+      dashArray: '3 4',
+      className: 'river-reach river-reach--seasonal',
+    };
   }
   if (kind === 'EMBAULADO') {
-    return { weight: 1.1, color: '#b3b1a8', opacity: 0.8, fill: false, dashArray: '1 3', className };
+    return {
+      weight: 1.1,
+      color: '#b3b1a8',
+      opacity: 0.8,
+      fill: false,
+      dashArray: '1 3',
+      className: 'river-reach river-reach--culverted',
+    };
   }
   return {
-    weight: carriesWave ? 1.8 : 1.5,
+    weight: 1.5,
     color: '#9dc0dd',
     opacity: 0.9,
     fill: false,
     dashArray: undefined,
-    className,
+    className: 'river-reach river-reach--perennial',
   };
 }
 
@@ -193,66 +188,78 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
   onSelectRef.current = onSelect;
   const showWaveRef = useRef(showWave);
   showWaveRef.current = showWave;
+  const activeIdRef = useRef(activeId);
+  activeIdRef.current = activeId;
 
   /**
-   * Colours each reach by what the gauges on its river say is happening there,
-   * and phases its crest by how long the water needs to travel that far.
+   * Follows each gauge downstream through the network and marks what it covers.
+   *
+   * Reaches under a gauge reporting Precaución or Alerta take its colour and
+   * carry a crest that leaves the gauge and travels down the channel; every
+   * other reach keeps the quiet hairline and stays still, so any movement on
+   * the map means a warning and points at where the water is heading.
    *
    * The style callback cannot do this: it is handed a reach's attributes but
-   * never its position, and position is exactly what decides which gauges
-   * bracket the reach and when its crest is due.
+   * never its position, and position is the only thing that says which gauge
+   * is upstream of it.
    */
   const applyReachStates = useCallback(() => {
     const map = mapRef.current;
     const container = containerRef.current;
     if (!map || !container) return;
 
-    const paths = container.querySelectorAll<SVGPathElement>('path.river-reach--wave');
+    const paths = container.querySelectorAll<SVGPathElement>('path.river-reach');
     if (paths.length === 0) return;
 
     const bounds = container.getBoundingClientRect();
-    const fallbackVelocity = networkVelocity(stationsRef.current);
+    const mpp = metresPerPixel(map.getCenter().lat, map.getZoom());
 
-    paths.forEach((path) => {
-      // Where a reach sits never changes, so it is measured once and kept on
-      // the element; panning would otherwise move the answer.
-      if (path.dataset.lat === undefined) {
-        const length = path.getTotalLength();
-        const ctm = path.getScreenCTM();
-        if (!length || !ctm) return;
-        const mid = path.getPointAtLength(length / 2).matrixTransform(ctm);
-        const latlng = map.containerPointToLatLng([mid.x - bounds.left, mid.y - bounds.top]);
-        path.dataset.lat = String(latlng.lat);
-        path.dataset.lng = String(latlng.lng);
-      }
+    const reaches = buildReaches(paths, bounds.left, bounds.top, mpp);
+    const drainage = orientNetwork(reaches);
 
-      const latitude = Number(path.dataset.lat);
-      const longitude = Number(path.dataset.lng);
-      if (Number.isNaN(latitude) || Number.isNaN(longitude)) return;
+    // Only gauges that are actually saying something drive the network; a
+    // station with no reading has nothing to propagate.
+    const gauges: GaugePoint[] = stationsRef.current
+      .filter((s) => s.latest !== null)
+      .map((s) => {
+        const point = map.latLngToContainerPoint([s.config.lat, s.config.lng]);
+        return { stationId: s.config.id, x: point.x, y: point.y };
+      });
 
-      const token =
-        [...path.classList]
-          .find((c) => c.startsWith(RIVER_TOKEN_CLASS))
-          ?.slice(RIVER_TOKEN_CLASS.length) ?? null;
+    const attribution = attributeDownstream(reaches, drainage, gauges, MAX_SNAP_PX);
 
-      const state = reachStateAt(stationsRef.current, token, latitude);
-      const { rest, crest } = reachColors(state.status);
-      const weight = state.status === 'ALERTA' ? 2.6 : state.status === 'PRECAUCION' ? 2.2 : 1.8;
+    reaches.forEach(({ path }) => {
+      const attributed = attribution.get(path);
+      const station = attributed
+        ? stationsRef.current.find((s) => s.config.id === attributed.stationId)
+        : undefined;
 
-      path.style.setProperty('--reach-rest', rest);
+      const status = statusOf(station);
+      const isSelected = attributed?.stationId === activeIdRef.current;
+      const raised = isRaised(status);
+
+      // Selecting a station traces what it speaks for, without pretending a
+      // calm river is news: the emphasis is a step of the same blue.
+      const { rest, crest } = reachColors(status);
+      const restColour = isSelected && !raised ? crest : rest;
+      const weight = raised ? reachWeight(status) : isSelected ? 2 : reachWeight(status);
+
+      path.classList.toggle('river-reach--selected', isSelected);
+      path.style.setProperty('--reach-rest', restColour);
       path.style.setProperty('--reach-crest', crest);
       path.style.setProperty('--reach-weight', `${weight}px`);
 
-      // Without a velocity there is nothing to time the crest with, so the
-      // reach keeps its colour and stays still rather than inventing a pace.
-      const velocity = state.velocityMps > 0 ? state.velocityMps : fallbackVelocity;
-      if (!showWaveRef.current || velocity <= 0) {
-        path.style.animationName = 'none';
+      const velocity = velocityOf(station);
+      const animate = showWaveRef.current && isRaised(status) && velocity > 0 && attributed;
+
+      if (!animate) {
+        path.classList.remove('river-reach--wave');
+        path.style.removeProperty('animation-delay');
         return;
       }
 
-      path.style.animationName = '';
-      path.style.animationDelay = `${waveDelaySeconds(latitude, longitude, velocity).toFixed(2)}s`;
+      path.classList.add('river-reach--wave');
+      path.style.animationDelay = `${waveDelaySeconds(attributed.distanceM, velocity).toFixed(2)}s`;
     });
   }, []);
 
@@ -327,8 +334,7 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
         // wildcard, so without this proxy every reach silently falls back to
         // Leaflet's default 3px #3388ff path.
         vectorTileLayerStyles: new Proxy({} as Record<string, unknown>, {
-          get: () => (properties: Record<string, unknown>) =>
-            reachStyleFor(stationsRef.current, properties),
+          get: () => reachStyleFor,
           has: () => true,
         }),
         getFeatureId: (feature: { properties: Record<string, unknown> }) =>
@@ -348,10 +354,11 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
     }
   }, [showRivers, applyReachStates]);
 
-  // Re-run the pass on new readings and whenever the view brings in new tiles.
+  // Re-run the pass on new readings, a new selection, and whenever the view
+  // brings in new tiles.
   useEffect(() => {
     applyReachStates();
-  }, [stations, showWave, currentZoom, applyReachStates]);
+  }, [stations, activeId, showWave, currentZoom, applyReachStates]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -424,9 +431,13 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
     if (previousActiveRef.current === activeId) return;
     previousActiveRef.current = activeId;
 
-    map.flyTo([station.config.lat, station.config.lng], Math.max(map.getZoom(), 14), {
-      duration: 0.9,
-    });
+    // Pan only when the station is off-screen, and never zoom in: the reaches a
+    // station speaks for run for kilometres, and tightening the view would cut
+    // the very trace the selection is meant to show.
+    const target = L.latLng(station.config.lat, station.config.lng);
+    if (!map.getBounds().pad(-0.15).contains(target)) {
+      map.panTo(target, { duration: 0.6 });
+    }
     // Only react to the selection itself, not to every telemetry refresh.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeId]);
@@ -512,8 +523,8 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
 
               {showRivers && showWave && (
                 <p className="text-[10px] text-ink-3 leading-relaxed border-t border-hairline pt-2">
-                  Cada tramo se tiñe del estado que miden las estaciones de su río y se realza al
-                  pasar la onda, que avanza aguas abajo a la velocidad del agua medida.
+                  Cuando una estación entra en Precaución o Alerta, su tramo aguas abajo se tiñe y
+                  una onda lo recorre en el sentido de la corriente. Sin aviso, la red está quieta.
                 </p>
               )}
             </div>
@@ -546,7 +557,7 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
           ))}
         </div>
         <p className="text-[10px] text-ink-3 mt-1.5 pt-1.5 border-t border-hairline">
-          El realce recorre cada río aguas abajo
+          El color cubre el tramo aguas abajo de cada estación
         </p>
       </div>
 

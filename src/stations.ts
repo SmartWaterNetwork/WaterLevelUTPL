@@ -22,7 +22,6 @@ export const STATIONS: StationConfig[] = [
     locationName: '699451 E, 9554704 S',
     lat: -4.026679,
     lng: -79.203472,
-    matchTokens: ['malacatos'],
     settings: {
       ...baseSettings,
       channelId: 3440458,
@@ -39,7 +38,6 @@ export const STATIONS: StationConfig[] = [
     locationName: '698471 E, 9559387 S',
     lat: -3.984353,
     lng: -79.212388,
-    matchTokens: ['zamora'],
     settings: {
       ...baseSettings,
       channelId: 3425609,
@@ -56,7 +54,6 @@ export const STATIONS: StationConfig[] = [
     locationName: '699558 E, 9555671 S',
     lat: -4.017933,
     lng: -79.202527,
-    matchTokens: ['jipiro'],
     settings: {
       ...baseSettings,
       channelId: 3440461,
@@ -73,7 +70,6 @@ export const STATIONS: StationConfig[] = [
     locationName: '699836 E, 9560901 S',
     lat: -3.970636,
     lng: -79.200127,
-    matchTokens: ['zamora'],
     settings: {
       ...baseSettings,
       channelId: 3440462,

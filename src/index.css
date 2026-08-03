@@ -252,6 +252,14 @@ path.river-reach {
   }
 }
 
+/* The reaches the selected station governs, so it is clear what it speaks for
+   even when nothing is wrong. Colour still comes from the state. */
+path.river-reach--selected {
+  stroke: var(--reach-rest);
+  stroke-width: var(--reach-weight);
+  stroke-opacity: 1;
+}
+
 path.river-reach--wave {
   stroke: var(--reach-rest);
   stroke-width: var(--reach-weight);
