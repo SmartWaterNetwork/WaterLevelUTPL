@@ -249,6 +249,18 @@ svg.leaflet-tile,
 path.river-reach {
   stroke-linecap: round !important;
   stroke-linejoin: round !important;
+  /* Always driven by the custom property MapPanel sets on every reach, every
+     pass — not just the wave/upstream states below — because that is where
+     the width is corrected for zoom. Past the tiles' native zoom,
+     leaflet.vectorgrid re-scales the existing tile with a CSS transform
+     instead of fetching new geometry, which inflates stroke-width right along
+     with it; MapPanel shrinks the width it asks for by the same factor before
+     it ever reaches this property, so what lands here is already correct.
+     vector-effect only smooths the brief transform Leaflet applies during an
+     in-progress zoom gesture — it can't touch the transform above, which
+     persists after the gesture ends. */
+  stroke-width: var(--reach-weight, 1.5px);
+  vector-effect: non-scaling-stroke;
   transition: stroke 0.4s ease, stroke-width 0.4s ease, opacity 0.4s ease;
 }
 
@@ -275,17 +287,18 @@ path.river-reach {
   }
 }
 
-/* The reaches the selected station governs, so it is clear what it speaks for
-   even when nothing is wrong. Colour still comes from the state. */
-path.river-reach--selected {
+/* Everything upstream of the clicked station — what its reading actually
+   represents. One meaning, one colour: the same blue step a calm reach takes
+   at its crest, applied as a resting state instead of a pulse. A real warning
+   (an actual PRECAUCION/ALERTA colour) always wins over this — see
+   applyReachStates — so a click can never paint over a signal that matters. */
+path.river-reach--upstream {
   stroke: var(--reach-rest);
-  stroke-width: var(--reach-weight);
   stroke-opacity: 1;
 }
 
 path.river-reach--wave {
   stroke: var(--reach-rest);
-  stroke-width: var(--reach-weight);
   /* The transition above would fight the keyframe on every frame. */
   transition: none;
   animation: riverCrest var(--wave-period, 4.5s) ease-in-out infinite;

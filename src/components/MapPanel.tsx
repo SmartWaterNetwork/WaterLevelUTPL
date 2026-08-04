@@ -17,7 +17,9 @@ import {
   buildReaches,
   orientNetwork,
   GaugePoint,
+  JOIN_TOLERANCE_PX,
 } from '../utils/riverNetwork';
+import { UPSTREAM_REACH_FIDS } from '../data/upstreamReaches';
 import { num } from '../utils/format';
 import { Layers, X } from 'lucide-react';
 
@@ -72,6 +74,16 @@ const RIVERS_MVT_URL =
 /** A station further than this from any reach is not on the mapped network. */
 const MAX_SNAP_PX = 40;
 
+/**
+ * The finest zoom the river tiles are actually fetched at (verified against
+ * the tile source: it 400s past 14) — every further zoom just re-scales this
+ * tile with a CSS transform rather than fetching new geometry. That transform
+ * is what MAX_SNAP_PX, JOIN_TOLERANCE_PX and every reach's stroke-width are
+ * tuned against, so both need converting away from raw screen pixels at
+ * whatever zoom the map happens to be at — see zoomCorrection below.
+ */
+const RIVERS_MAX_NATIVE_ZOOM = 14;
+
 /** Lowercase and strip diacritics so "Río" matches the layer's "Rio". */
 function normalize(value: unknown): string {
   return String(value ?? '')
@@ -88,6 +100,44 @@ function metresPerPixel(latitude: number, zoom: number): number {
 /** Stable identity of a reach, so it can be restyled without a refetch. */
 function featureId(properties: Record<string, unknown>): string {
   return String(properties?.id ?? properties?.fid ?? properties?.objectid ?? '');
+}
+
+/**
+ * Maps each currently-rendered reach `<path>` to its source `fid`, so
+ * UPSTREAM_REACH_FIDS (computed once in QGIS against the same source layer)
+ * can be looked up directly instead of re-deriving the network live.
+ *
+ * leaflet.vectorgrid doesn't expose per-feature properties for a non-
+ * interactive layer through any public API — `getFeatureId` only feeds its
+ * own internal cache, keyed by whatever that callback returns (a UUID here,
+ * not the fid; see the note on featureId above). This reads that cache
+ * directly. It's undocumented, but it's the only way to get the fid back
+ * without making the layer interactive just to read data off it.
+ */
+function collectFeatureFids(layer: L.Layer): Map<SVGPathElement, number> {
+  const byPath = new Map<SVGPathElement, number>();
+  const vectorTiles = (
+    layer as unknown as {
+      _vectorTiles?: Record<
+        string,
+        { _features?: Record<string, { feature: { properties?: Record<string, unknown>; _path?: unknown } }> }
+      >;
+    }
+  )._vectorTiles;
+  if (!vectorTiles) return byPath;
+
+  for (const tileKey in vectorTiles) {
+    const features = vectorTiles[tileKey]._features;
+    if (!features) continue;
+    for (const key in features) {
+      const { properties, _path } = features[key].feature;
+      const fid = properties?.fid;
+      if (_path instanceof SVGPathElement && typeof fid === 'number') {
+        byPath.set(_path, fid);
+      }
+    }
+  }
+  return byPath;
 }
 
 type ReachKind = 'PERENNE' | 'INTERMITENTE' | 'EMBAULADO';
@@ -224,6 +274,14 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
    * The style callback cannot do this: it is handed a reach's attributes but
    * never its position, and position is the only thing that says which gauge
    * is upstream of it.
+   *
+   * Clicking a station adds a second, independent trace, in the opposite
+   * direction: every reach upstream of that point — what the reading actually
+   * represents — takes the same blue a calm reach uses at its crest
+   * (`river-reach--upstream`, in index.css). It runs regardless of whether the
+   * station currently has a reading, since it describes the network's shape,
+   * not a live warning, and a real warning elsewhere always overrides it so a
+   * click can never paint over a signal that matters.
    */
   const applyReachStates = useCallback(() => {
     const map = mapRef.current;
@@ -234,10 +292,30 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
     if (paths.length === 0) return;
 
     const bounds = container.getBoundingClientRect();
-    const mpp = metresPerPixel(map.getCenter().lat, map.getZoom());
+    const lat = map.getCenter().lat;
+    const zoom = map.getZoom();
+    const mpp = metresPerPixel(lat, zoom);
+
+    // Tiles past RIVERS_MAX_NATIVE_ZOOM are the native tile re-scaled with a
+    // CSS transform, not new geometry — so a reach rendered at zoom 17 is
+    // literally the zoom-14 tile blown up 8x. A fixed pixel tolerance would
+    // therefore mean a different real-world distance (and different join and
+    // snap decisions, appearing and disappearing reaches) depending on how far
+    // past 14 the map happens to be zoomed. Scaling every pixel constant by
+    // the ratio between zoom-14 and current metres-per-pixel keeps them
+    // anchored to the same real-world distance at any zoom.
+    const zoomCorrection = metresPerPixel(lat, RIVERS_MAX_NATIVE_ZOOM) / mpp;
+    const joinTolerancePx = JOIN_TOLERANCE_PX * zoomCorrection;
+    const maxSnapPx = MAX_SNAP_PX * zoomCorrection;
+
+    // The same re-scaling inflates every stroke-width past zoom 14, since it's
+    // drawn on the tile *before* the CSS transform enlarges it. Shrinking the
+    // weight we ask for by exactly that factor cancels it out, so a line looks
+    // the same width at zoom 20 as it does at zoom 14.
+    const weightCompensation = Math.pow(2, Math.min(0, RIVERS_MAX_NATIVE_ZOOM - zoom));
 
     const reaches = buildReaches(paths, bounds.left, bounds.top, mpp);
-    const drainage = orientNetwork(reaches);
+    const drainage = orientNetwork(reaches, joinTolerancePx);
 
     // Only gauges that are actually saying something drive the network; a
     // station with no reading has nothing to propagate.
@@ -248,7 +326,17 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
         return { stationId: s.config.id, x: point.x, y: point.y };
       });
 
-    const attribution = attributeDownstream(reaches, drainage, gauges, MAX_SNAP_PX);
+    const attribution = attributeDownstream(reaches, drainage, gauges, maxSnapPx);
+
+    // Precomputed (see src/data/upstreamReaches.ts) rather than derived from
+    // this same on-screen geometry, unlike everything above: a live version
+    // of this turned out to reshuffle unpredictably with zoom, because almost
+    // the whole network is one connected graph and small rendering precision
+    // differences could flip which large branch counted as "upstream".
+    const upstreamFids = new Set(UPSTREAM_REACH_FIDS[activeIdRef.current] ?? []);
+    const fidByPath = upstreamFids.size > 0 && riversLayerRef.current
+      ? collectFeatureFids(riversLayerRef.current)
+      : null;
 
     reaches.forEach(({ path }) => {
       const attributed = attribution.get(path);
@@ -257,16 +345,17 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
         : undefined;
 
       const status = statusOf(station);
-      const isSelected = attributed?.stationId === activeIdRef.current;
       const raised = isRaised(status);
 
-      // Selecting a station traces what it speaks for, without pretending a
-      // calm river is news: the emphasis is a step of the same blue.
+      // A real warning always wins: the click-driven upstream trace only gets
+      // to recolour a reach that has nothing more important to say.
+      const fid = fidByPath?.get(path);
+      const isUpstream = !raised && fid !== undefined && upstreamFids.has(fid);
       const { rest, crest } = reachColors(status);
-      const restColour = isSelected && !raised ? crest : rest;
-      const weight = raised ? reachWeight(status) : isSelected ? 2 : reachWeight(status);
+      const restColour = isUpstream ? crest : rest;
+      const weight = (raised ? reachWeight(status) : isUpstream ? 2 : reachWeight(status)) * weightCompensation;
 
-      path.classList.toggle('river-reach--selected', isSelected);
+      path.classList.toggle('river-reach--upstream', isUpstream);
       path.style.setProperty('--reach-rest', restColour);
       path.style.setProperty('--reach-crest', crest);
       path.style.setProperty('--reach-weight', `${weight}px`);
@@ -368,7 +457,7 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
         }),
         getFeatureId: (feature: { properties: Record<string, unknown> }) =>
           featureId(feature.properties),
-        maxNativeZoom: 13,
+        maxNativeZoom: RIVERS_MAX_NATIVE_ZOOM,
         maxZoom: 22,
         minZoom: 1,
         interactive: false,
@@ -586,7 +675,8 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
           ))}
         </div>
         <p className="text-[10px] text-ink-3 mt-1.5 pt-1.5 border-t border-hairline">
-          El color cubre el tramo aguas abajo de cada estación
+          El color cubre el tramo aguas abajo de cada estación · al hacer clic se resalta lo que
+          drena aguas arriba
         </p>
       </div>
 

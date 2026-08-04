@@ -42,10 +42,11 @@ export interface Attribution {
 }
 
 /** How close a reach end has to pass to another reach to count as joined.
- *  In pixels, because what it absorbs is rendering precision: the tiles
- *  quantise to 1/16 px and simplify by zoom. At 5 px, 311 of 358 reaches join
- *  into a single component with none left isolated. */
-const JOIN_TOLERANCE_PX = 5;
+ *  In pixels *at the tiles' native zoom* (MapPanel scales this for whatever
+ *  zoom the map is actually at) — what it absorbs is rendering precision, the
+ *  tiles quantise to 1/16 px and simplify by zoom. At 5 px, 311 of 358 reaches
+ *  join into a single component with none left isolated. */
+export const JOIN_TOLERANCE_PX = 5;
 
 /** Roughly one sample every this many pixels along a reach. */
 const SAMPLE_SPACING_PX = 8;
@@ -65,25 +66,35 @@ export function buildReaches(
   const reaches: ReachNode[] = [];
 
   for (const path of paths) {
-    const length = path.getTotalLength();
+    const localLength = path.getTotalLength();
     const ctm = path.getScreenCTM();
-    if (!length || !ctm) continue;
+    if (!localLength || !ctm) continue;
 
     const samples = Math.min(
       MAX_SAMPLES,
-      Math.max(MIN_SAMPLES, Math.round(length / SAMPLE_SPACING_PX))
+      Math.max(MIN_SAMPLES, Math.round(localLength / SAMPLE_SPACING_PX))
     );
 
     const points: { x: number; y: number }[] = [];
     let northY = Infinity;
     for (let i = 0; i <= samples; i++) {
-      const p = path.getPointAtLength((length * i) / samples).matrixTransform(ctm);
+      const p = path.getPointAtLength((localLength * i) / samples).matrixTransform(ctm);
       const point = { x: p.x - originX, y: p.y - originY };
       points.push(point);
       if (point.y < northY) northY = point.y;
     }
 
-    reaches.push({ path, points, lengthM: length * metresPerPixel, northY });
+    // getScreenCTM's own scale, not an assumption that one local path unit is
+    // one screen pixel: past the tiles' native zoom the tile is CSS-scaled
+    // instead of redrawn, so that ratio isn't 1 any more, and multiplying
+    // `localLength` by metres-per-*screen*-pixel without correcting for it
+    // would silently shrink lengthM by however much the tile is over-zoomed.
+    // (Summing the sampled points instead, as an alternative, would dodge
+    // that — but a chord sum *underestimates* a winding reach's true length
+    // more than the CTM scale is ever off by, which quietly breaks the
+    // shortest-path sweep orientNetwork does downstream.)
+    const localToScreenPx = Math.hypot(ctm.a, ctm.b);
+    reaches.push({ path, points, lengthM: localLength * localToScreenPx * metresPerPixel, northY });
   }
 
   return reaches;
@@ -155,9 +166,14 @@ export interface Drainage {
 
 /**
  * Joins the reaches and orients them, so every reach knows what is below it.
+ *
+ * `joinTolerancePx` is JOIN_TOLERANCE_PX already converted by the caller to
+ * whatever the current zoom's screen pixels are — passing the raw constant in
+ * here directly would make the joins found (and so the whole shape of the
+ * network) depend on how far the map happens to be zoomed.
  */
-export function orientNetwork(reaches: ReachNode[]): Drainage {
-  const tolerance = JOIN_TOLERANCE_PX ** 2;
+export function orientNetwork(reaches: ReachNode[], joinTolerancePx: number): Drainage {
+  const tolerance = joinTolerancePx ** 2;
 
   // A reach is joined to another when one of its ends touches that reach's line.
   const neighbours = new Map<ReachNode, Set<ReachNode>>();
