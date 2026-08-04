@@ -64,6 +64,7 @@ export function rowToConfig(row: StationConfigRow): StationConfig {
       channelSlope: row.channel_slope ?? 0.002,
       manningN: row.manning_n ?? 0.013,
       linearFactor: row.linear_factor ?? 2.5,
+      weirCrestHeight: row.weir_crest_cm ?? 0,
     },
   };
 }
@@ -128,6 +129,7 @@ export async function createStation(draft: StationDraft): Promise<number> {
     p_channel_width_m: draft.settings.channelWidth,
     p_channel_slope: draft.settings.channelSlope,
     p_manning_n: draft.settings.manningN,
+    p_weir_crest_cm: draft.settings.weirCrestHeight,
   });
 
   if (error) throw new Error(error.message);
@@ -190,6 +192,7 @@ export async function saveStation(
       channel_slope: s.channelSlope,
       manning_n: s.manningN,
       linear_factor: s.linearFactor,
+      weir_crest_cm: s.weirCrestHeight ?? 0,
     })
     .eq('station_id', dbId);
   if (hydraulics.error) throw new Error(hydraulics.error.message);

@@ -165,6 +165,7 @@ export type Database = {
           manning_n: number;
           station_id: number;
           updated_at: string;
+          weir_crest_cm: number;
         };
         Insert: {
           channel_slope?: number;
@@ -174,6 +175,7 @@ export type Database = {
           manning_n?: number;
           station_id: number;
           updated_at?: string;
+          weir_crest_cm?: number;
         };
         Update: {
           channel_slope?: number;
@@ -183,6 +185,7 @@ export type Database = {
           manning_n?: number;
           station_id?: number;
           updated_at?: string;
+          weir_crest_cm?: number;
         };
         Relationships: [];
       };
@@ -309,6 +312,7 @@ export type Database = {
           river_name: string | null;
           sensor_material: Database['public']['Enums']['sensor_material'] | null;
           updated_at: string | null;
+          weir_crest_cm: number | null;
         };
         Relationships: [];
       };
@@ -339,6 +343,7 @@ export type Database = {
           p_precaucion_cm?: number;
           p_read_api_key?: string;
           p_river_name?: string;
+          p_weir_crest_cm?: number;
         };
         Returns: number;
       };

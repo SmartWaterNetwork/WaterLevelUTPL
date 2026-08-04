@@ -159,7 +159,9 @@ function basemapUrl(style: BasemapStyle): string {
 /** Marker markup. Labels collapse to the dot alone when zoomed far out. */
 function markerHtml(station: StationState, isActive: boolean, showLabel: boolean): string {
   const color = statusColor[station.status];
-  const dot = `<span class="station-marker__dot" style="background:${color}"></span>`;
+  const pulse = isRaised(statusOf(station)) && station.config.settings.conversionMode === 'WEIR';
+  // `color` doubles as the pulse ring's currentColor — see structureAlertPulse.
+  const dot = `<span class="station-marker__dot${pulse ? ' station-marker__dot--structure-alert' : ''}" style="background:${color};color:${color}"></span>`;
 
   if (!showLabel) {
     return `<div class="station-marker__inner">${dot}</div>`;
@@ -269,8 +271,15 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
       path.style.setProperty('--reach-crest', crest);
       path.style.setProperty('--reach-weight', `${weight}px`);
 
+      // A station on a weir or settling structure isn't reporting an open
+      // channel: its level reflects the structure's own state (silting up,
+      // an outlet choked with debris) rather than a flood wave in transit, so
+      // sending a crest travelling downstream from it would show movement
+      // that isn't happening. Its own marker carries that warning instead —
+      // see the station-markers effect below.
+      const isStructure = station?.config.settings.conversionMode === 'WEIR';
       const velocity = velocityOf(station);
-      const animate = showWaveRef.current && isRaised(status) && velocity > 0 && attributed;
+      const animate = showWaveRef.current && isRaised(status) && velocity > 0 && attributed && !isStructure;
 
       if (!animate) {
         path.classList.remove('river-reach--wave');

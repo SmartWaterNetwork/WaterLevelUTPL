@@ -35,11 +35,13 @@ export interface AlertConfig {
   id: string;
   name: string;
   type: AlertType;
-  threshold: number; // Value in active unit (cm or L/s or minutes)
+  threshold: number; // Value in active unit (cm, L/s, or cm/h for RATE_OF_CHANGE)
   enabled: boolean;
   severity: AlertSeverity;
   pushNotification: boolean;
   soundAlert: boolean;
+  /** Station this rule applies to; unset means every station. */
+  stationId?: string;
 }
 
 export interface AlertLogItem {
@@ -75,6 +77,13 @@ export interface ChannelSettings {
   channelSlope: number; // e.g. 0.001
   manningN: number; // e.g. 0.013 for smooth concrete
   linearFactor: number; // Flow = level * linearFactor
+  /**
+   * Height of the weir crest above the sensor's zero (cm). Only meaningful
+   * for WEIR: the equation needs head *above the crest*, not raw depth from
+   * the channel floor — a pool held back by a weir reads a level well before
+   * any water actually spills, and that dead storage isn't flow.
+   */
+  weirCrestHeight?: number;
 }
 
 /** Level thresholds (cm) that decide a station's state. */

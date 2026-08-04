@@ -370,7 +370,30 @@ export const StationForm: React.FC<StationFormProps> = ({
                 />
               </Field>
             )}
+
+            {form.settings.conversionMode === 'WEIR' && (
+              <Field
+                label="Altura de la cresta (cm)"
+                hint="Del cero del sensor a la cresta del vertedero — medida de campo, no de la lámina de agua"
+              >
+                <input
+                  type="number"
+                  step="1"
+                  value={form.settings.weirCrestHeight ?? 0}
+                  onChange={(e) => setSetting('weirCrestHeight', Number(e.target.value))}
+                  className={inputClass}
+                />
+              </Field>
+            )}
           </div>
+
+          {form.settings.conversionMode === 'WEIR' && (form.settings.weirCrestHeight ?? 0) === 0 && (
+            <p className="text-[11px] rounded-md px-2.5 py-2 mt-3 bg-[#fdf8ec] text-ink-2">
+              Con la cresta en 0, el caudal se calcula con la lámina completa como si toda ella
+              estuviera vertiendo — normalmente sobrestima el caudal. Mide en campo la distancia
+              entre el cero del sensor y la cresta del vertedero para corregirlo.
+            </p>
+          )}
         </Section>
 
         <Section title="Unidades">

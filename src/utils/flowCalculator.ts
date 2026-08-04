@@ -1,4 +1,4 @@
-import { LevelUnit, FlowUnit, ConversionMode, ChannelSettings } from '../types';
+import { LevelUnit, FlowUnit, ConversionMode, ChannelSettings, Reading } from '../types';
 
 /**
  * Converts water level reading (assumed in raw cm from sensor field1) to the target LevelUnit.
@@ -53,8 +53,16 @@ export function calculateFlowRate(
     case 'WEIR': {
       // Francis formula for rectangular suppressed weir:
       // Q = 1.84 * L * H^(1.5) in m3/s
+      //
+      // H is head *above the crest*, not raw depth: a weir holds back a pool,
+      // so depth below the crest is dead storage that never spills. Without
+      // subtracting it, every reading below the crest would still report a
+      // (small, wrong) flow, and every reading above it would overstate H by
+      // the full crest height.
       const L = Math.max(0.1, settings.channelWidth || 0.5);
-      const Q_m3s = 1.84 * L * Math.pow(depthM, 1.5);
+      const crestM = Math.max(0, (settings.weirCrestHeight || 0) / 100);
+      const headM = Math.max(0, depthM - crestM);
+      const Q_m3s = 1.84 * L * Math.pow(headM, 1.5);
       flowLps = Q_m3s * 1000;
       break;
     }
@@ -100,6 +108,26 @@ export function calculateVelocity(rawLevelCm: number, settings: ChannelSettings)
   // calculateFlowRate returns the configured unit, so ask it for L/s explicitly.
   const flowLps = calculateFlowRate(rawLevelCm, { ...settings, flowUnit: 'L/s' });
   return flowLps / 1000 / (B * depthM);
+}
+
+/**
+ * How fast the level is rising, in cm per hour, over the last `windowMinutes`.
+ *
+ * Compares the latest reading against the oldest one still inside the window
+ * rather than the previous sample, so a single noisy point can't swing the
+ * result — the signal this is meant to catch (a weir choking on debris, a
+ * pump station backing up) is a *sustained* rise, not a one-sample jitter.
+ * Returns null when there isn't yet enough history to say.
+ */
+export function levelRateOfChange(readings: Reading[], windowMinutes: number): number | null {
+  if (readings.length < 2) return null;
+  const latest = readings[readings.length - 1];
+  const cutoff = latest.tMs - windowMinutes * 60_000;
+  const past = readings.find((r) => r.tMs >= cutoff);
+  if (!past || past.tMs === latest.tMs) return null;
+
+  const hours = (latest.tMs - past.tMs) / 3_600_000;
+  return (latest.levelCm - past.levelCm) / hours;
 }
 
 /**

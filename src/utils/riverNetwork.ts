@@ -98,6 +98,56 @@ function squaredDistanceToLine(reach: ReachNode, x: number, y: number): number {
   return best;
 }
 
+/**
+ * Projects a point onto a reach's sampled polyline and reports how far along
+ * it the closest point falls, measured from `points[0]` in the same units as
+ * the points themselves (container pixels).
+ */
+function projectOntoReach(reach: ReachNode, x: number, y: number): { distSq: number; alongPx: number; totalPx: number } {
+  let bestDistSq = Infinity;
+  let bestAlong = 0;
+  let cumulative = 0;
+
+  for (let i = 0; i < reach.points.length - 1; i++) {
+    const a = reach.points[i];
+    const b = reach.points[i + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const segLen = Math.hypot(dx, dy);
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lenSq)) : 0;
+    const px = a.x + t * dx;
+    const py = a.y + t * dy;
+    const distSq = (px - x) ** 2 + (py - y) ** 2;
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      bestAlong = cumulative + t * segLen;
+    }
+    cumulative += segLen;
+  }
+
+  return { distSq: bestDistSq, alongPx: bestAlong, totalPx: cumulative };
+}
+
+/**
+ * Whether a reach's downstream end is its last sampled point rather than its
+ * first — the per-reach counterpart to how the network's root is chosen.
+ * Needed to turn "distance from points[0]" into "distance in the direction
+ * the water actually moves".
+ */
+function flowsTowardLastPoint(reach: ReachNode, drainage: Drainage): boolean {
+  const next = drainage.downstreamOf.get(reach);
+  const first = reach.points[0];
+  const last = reach.points[reach.points.length - 1];
+
+  if (!next) {
+    // This reach is itself an outlet: fall back to the same convention used
+    // to root the network — the basin drains north, so downstream is north.
+    return last.y <= first.y;
+  }
+  return squaredDistanceToLine(next, last.x, last.y) <= squaredDistanceToLine(next, first.x, first.y);
+}
+
 /** Which reach lies immediately below each one. */
 export interface Drainage {
   downstreamOf: Map<ReachNode, ReachNode | null>;
@@ -196,12 +246,30 @@ export interface GaugePoint {
   y: number;
 }
 
+/** Where a gauge's walk enters a reach: how far in, and in which direction. */
+interface EntryPoint {
+  /** Position within the reach, in the downstream direction: 0 at its
+   *  upstream end, lengthM at its downstream end. */
+  downstreamPosM: number;
+  /** Cumulative distance travelled from the gauge to reach this point. */
+  distanceM: number;
+}
+
+/** Two entries are the same physical junction if their along-reach position
+ *  agrees to within this: sampling and floating point, not a real gap. */
+const SAME_JUNCTION_M = 2;
+
 /**
  * Follows every gauge down to the outlet and reports, for each reach on the
  * way, which gauge governs it and how far below that gauge it lies.
  *
- * Where two gauges both lie upstream of a reach, the nearer one wins: that is
- * the last gauge the water passed, and so the one that describes it.
+ * A reach cannot be split for styling — one `<path>` is one colour — so where
+ * two gauges' walks both cross the same reach, the whole reach goes to
+ * whichever entered it further downstream *within that reach*: that is the
+ * one whose water is actually flowing through most of it. Only when both
+ * enter at the same point (which is every reach but each gauge's own seed,
+ * since the walk always joins the next reach at its own start) does this fall
+ * back to whichever gauge is closer overall — the same rule as before.
  */
 export function attributeDownstream(
   reaches: ReachNode[],
@@ -209,20 +277,29 @@ export function attributeDownstream(
   gauges: GaugePoint[],
   maxSnapPx: number
 ): Map<SVGPathElement, Attribution> {
-  const attribution = new Map<SVGPathElement, Attribution>();
+  const entries = new Map<SVGPathElement, Map<string, EntryPoint>>();
 
   for (const gauge of gauges) {
     // The reach the station actually stands on, whatever its name claims.
     let seed: ReachNode | null = null;
+    let seedProjection: { distSq: number; alongPx: number; totalPx: number } | null = null;
     let best = maxSnapPx ** 2;
     for (const reach of reaches) {
-      const d = squaredDistanceToLine(reach, gauge.x, gauge.y);
-      if (d < best) {
-        best = d;
+      const projection = projectOntoReach(reach, gauge.x, gauge.y);
+      if (projection.distSq < best) {
+        best = projection.distSq;
         seed = reach;
+        seedProjection = projection;
       }
     }
-    if (!seed) continue;
+    if (!seed || !seedProjection) continue;
+
+    // Where along the seed the gauge itself sits, so only the portion
+    // actually downstream of it counts — not the whole reach from its start.
+    const seedAlongM =
+      seedProjection.totalPx > 0 ? (seedProjection.alongPx / seedProjection.totalPx) * seed.lengthM : 0;
+    const seedTowardLast = flowsTowardLastPoint(seed, drainage);
+    let entryPosM = seedTowardLast ? seedAlongM : seed.lengthM - seedAlongM;
 
     let reach: ReachNode | null = seed;
     let distanceM = 0;
@@ -230,13 +307,32 @@ export function attributeDownstream(
 
     while (reach && !guard.has(reach)) {
       guard.add(reach);
-      const current = attribution.get(reach.path);
-      if (!current || distanceM < current.distanceM) {
-        attribution.set(reach.path, { stationId: gauge.stationId, distanceM });
+
+      let byGauge = entries.get(reach.path);
+      if (!byGauge) {
+        byGauge = new Map();
+        entries.set(reach.path, byGauge);
       }
-      distanceM += reach.lengthM;
+      byGauge.set(gauge.stationId, { downstreamPosM: entryPosM, distanceM });
+
+      distanceM += reach.lengthM - entryPosM;
       reach = drainage.downstreamOf.get(reach) ?? null;
+      entryPosM = 0; // every subsequent reach is joined at its own upstream end
     }
+  }
+
+  const attribution = new Map<SVGPathElement, Attribution>();
+  for (const [path, byGauge] of entries) {
+    let winner: { stationId: string } & EntryPoint = { stationId: '', downstreamPosM: -Infinity, distanceM: Infinity };
+    for (const [stationId, entry] of byGauge) {
+      const samePosition = Math.abs(entry.downstreamPosM - winner.downstreamPosM) <= SAME_JUNCTION_M;
+      const betterPosition = entry.downstreamPosM > winner.downstreamPosM + SAME_JUNCTION_M;
+      const tieBrokenByDistance = samePosition && entry.distanceM < winner.distanceM;
+      if (betterPosition || tieBrokenByDistance || winner.stationId === '') {
+        winner = { stationId, ...entry };
+      }
+    }
+    attribution.set(path, { stationId: winner.stationId, distanceM: winner.distanceM });
   }
 
   return attribution;

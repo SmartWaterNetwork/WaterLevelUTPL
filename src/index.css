@@ -202,6 +202,29 @@ body {
   color: var(--color-ink-3);
 }
 
+/* A station on a weir or settling structure (desarenador) doesn't send a wave
+   downstream — its level is the structure's own state, not a flood in
+   transit — so the warning stays put and pulses on the marker instead. */
+@keyframes structureAlertPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 1px rgb(11 11 11 / 0.18), 0 0 0 0 currentColor;
+  }
+  50% {
+    box-shadow: 0 0 0 1px rgb(11 11 11 / 0.18), 0 0 0 6px transparent;
+  }
+}
+
+.station-marker__dot--structure-alert {
+  animation: structureAlertPulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .station-marker__dot--structure-alert {
+    animation: none;
+    box-shadow: 0 0 0 1px rgb(11 11 11 / 0.18), 0 0 0 3px currentColor;
+  }
+}
+
 /* ---------------------------------------------------------------------------
    River network — one layer, one path per reach, always a continuous line.
 

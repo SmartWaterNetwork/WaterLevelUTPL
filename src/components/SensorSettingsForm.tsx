@@ -177,6 +177,21 @@ export const SensorSettingsForm: React.FC<SensorSettingsFormProps> = ({
                 />
               </Field>
             )}
+
+            {form.conversionMode === 'WEIR' && (
+              <Field
+                label="Altura de la cresta (cm)"
+                hint="Del cero del sensor a la cresta del vertedero"
+              >
+                <input
+                  type="number"
+                  step="1"
+                  value={form.weirCrestHeight ?? 0}
+                  onChange={(e) => set('weirCrestHeight', Number(e.target.value))}
+                  className={inputClass}
+                />
+              </Field>
+            )}
           </div>
         </Section>
 

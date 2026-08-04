@@ -6,7 +6,7 @@ import { useStationNetwork } from './hooks/useStationNetwork';
 import { useStationCatalog } from './hooks/useStationCatalog';
 import { useAuth } from './hooks/useAuth';
 import { configToDraft, saveStation } from './lib/stationsApi';
-import { playAlertChime, triggerPushNotification } from './utils/flowCalculator';
+import { levelRateOfChange, playAlertChime, triggerPushNotification } from './utils/flowCalculator';
 import { TabId, TopBar } from './components/TopBar';
 import { StationPanel } from './components/StationPanel';
 import { MapPanel } from './components/MapPanel';
@@ -52,7 +52,26 @@ const DEFAULT_ALERTS: AlertConfig[] = [
     pushNotification: true,
     soundAlert: true,
   },
+  {
+    // st-3 sits on a desarenador, not an open channel: a rise there is as
+    // likely to mean the weir outlet is choked with debris as it is to mean
+    // more water is coming down the Malacatos. 15 cm/h is a starting point —
+    // no live readings were available to calibrate it against; tighten it
+    // once real data is flowing.
+    id: 'rule-rate-st3',
+    name: 'Subida rápida en el desarenador',
+    type: 'RATE_OF_CHANGE',
+    threshold: 15,
+    enabled: true,
+    severity: 'warning',
+    pushNotification: true,
+    soundAlert: false,
+    stationId: 'st-3',
+  },
 ];
+
+/** How far back RATE_OF_CHANGE rules look to judge whether a rise is sustained. */
+const RATE_OF_CHANGE_WINDOW_MIN = 60;
 
 type DrawerId = 'ALERTS' | 'DOCS' | 'SETTINGS' | 'ADMIN' | null;
 
@@ -91,6 +110,7 @@ export default function App() {
 
     alertsRef.current.forEach((rule) => {
       if (!rule.enabled) return;
+      if (rule.stationId && rule.stationId !== config.id) return;
 
       let triggered = false;
       let value = latest.level;
@@ -102,6 +122,13 @@ export default function App() {
         triggered = true;
         value = latest.flow;
         unit = config.settings.flowUnit;
+      } else if (rule.type === 'RATE_OF_CHANGE') {
+        const rate = levelRateOfChange(station.readings, RATE_OF_CHANGE_WINDOW_MIN);
+        if (rate !== null && rate >= rule.threshold) {
+          triggered = true;
+          value = rate;
+          unit = `${config.settings.levelUnit}/h`;
+        }
       }
 
       if (!triggered) return;
@@ -250,6 +277,7 @@ export default function App() {
             logs={logs}
             onClearLogs={() => setLogs([])}
             settings={active.config.settings}
+            stations={stations}
           />
         )}
       </Drawer>

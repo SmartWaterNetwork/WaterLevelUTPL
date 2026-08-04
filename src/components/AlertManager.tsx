@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertConfig, AlertLogItem, ChannelSettings } from '../types';
+import { AlertConfig, AlertLogItem, ChannelSettings, StationState } from '../types';
 import { playAlertChime, requestNotificationPermission, triggerPushNotification } from '../utils/flowCalculator';
 import { fullDateTime } from '../utils/format';
 import { Bell, BellOff, Check, Trash2, Volume2, VolumeX } from 'lucide-react';
@@ -10,6 +10,8 @@ interface AlertManagerProps {
   logs: AlertLogItem[];
   onClearLogs: () => void;
   settings: ChannelSettings;
+  /** To resolve a rule's stationId into a name worth showing. */
+  stations: StationState[];
 }
 
 const severityColor = {
@@ -57,6 +59,7 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
   logs,
   onClearLogs,
   settings,
+  stations,
 }) => {
   const [pushGranted, setPushGranted] = useState<boolean>(
     typeof Notification !== 'undefined' && Notification.permission === 'granted'
@@ -66,8 +69,17 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
   const patch = (id: string, changes: Partial<AlertConfig>) =>
     onUpdateAlerts(alerts.map((a) => (a.id === id ? { ...a, ...changes } : a)));
 
-  const unitFor = (type: AlertConfig['type']) =>
-    type.includes('FLOW') ? settings.flowUnit : settings.levelUnit;
+  const unitFor = (type: AlertConfig['type']) => {
+    if (type.includes('FLOW')) return settings.flowUnit;
+    if (type === 'RATE_OF_CHANGE') return `${settings.levelUnit}/h`;
+    return settings.levelUnit;
+  };
+
+  const scopeLabel = (stationId?: string) => {
+    if (!stationId) return 'dispara sobre todas las estaciones';
+    const station = stations.find((s) => s.config.id === stationId);
+    return `dispara solo sobre ${station ? station.config.riverName : stationId}`;
+  };
 
   const handleEnablePush = async () => {
     const granted = await requestNotificationPermission();
@@ -171,7 +183,7 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
                       <h3 className="text-[13px] font-semibold text-ink truncate">{alert.name}</h3>
                     </div>
                     <p className="text-[11px] text-ink-3 mt-0.5">
-                      {severityLabel[alert.severity]} · dispara sobre todas las estaciones
+                      {severityLabel[alert.severity]} · {scopeLabel(alert.stationId)}
                     </p>
                   </div>
 
