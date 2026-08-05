@@ -3,6 +3,7 @@ import { Box, Layers } from 'lucide-react';
 import { StationState } from '../types';
 import { series } from '../theme';
 import { num } from '../utils/format';
+import { CATCHMENT_AREA_KM2 } from '../data/catchmentAreas';
 
 // Three.js is ~1 MB and only the optional 3D view needs it, so it stays out of
 // the initial bundle that the map and the charts depend on.
@@ -118,6 +119,7 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
   const installationHeightCm = settings.installationHeight || 100;
   const emptyHeightCm = Math.max(0, installationHeightCm - levelCm);
   const fillPercentage = Math.min(100, Math.max(0, (levelCm / installationHeightCm) * 100));
+  const catchmentAreaKm2 = CATCHMENT_AREA_KM2[config.id];
 
   return (
     <section className="bg-surface border border-hairline rounded-lg">
@@ -235,6 +237,12 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
           </div>
 
           <dl className="border-t border-hairline pt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 text-[11px]">
+            <div>
+              <dt className="text-ink-3">Área de cuenca</dt>
+              <dd className="text-ink font-medium mt-0.5">
+                {catchmentAreaKm2 !== undefined ? `${num(catchmentAreaKm2, 2)} km²` : '—'}
+              </dd>
+            </div>
             {SPECS.map(([label, value]) => (
               <div key={label}>
                 <dt className="text-ink-3">{label}</dt>
