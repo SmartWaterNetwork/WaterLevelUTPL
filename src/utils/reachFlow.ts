@@ -34,17 +34,27 @@ export function velocityOf(station: StationState | undefined): number {
   return calculateVelocity(station.latest.levelCm, station.config.settings);
 }
 
+/** A desarenador or similar built basin — a structure, not a watercourse —
+ *  drawn in this hue whenever it isn't actively raised, so it reads as
+ *  infrastructure at a glance rather than blending into the plain river blue. */
+export const STRUCTURE_COLOR = '#7570b3';
+
 /**
  * Resting and crest colours. The crest is a darker step of the same hue, so the
  * pulse never changes what the colour means.
+ *
+ * `isStructure` only affects the calm case: a real warning still takes the
+ * usual amber/red regardless of what the reach is built as, since the alert
+ * colour is a safety signal and a structure's own identity isn't.
  */
-export function reachColors(status: ReachStatus): { rest: string; crest: string } {
+export function reachColors(status: ReachStatus, isStructure: boolean = false): { rest: string; crest: string } {
   switch (status) {
     case 'ALERTA':
       return { rest: statusColor.ALERTA, crest: '#8f2727' };
     case 'PRECAUCION':
       return { rest: statusColor.PRECAUCION, crest: '#b07c00' };
     default:
+      if (isStructure) return { rest: STRUCTURE_COLOR, crest: STRUCTURE_COLOR };
       // Normal and ungauged reaches are the same quiet hairline: a gauge
       // reading "normal" is not a statement worth colouring the map for.
       return { rest: '#9dc0dd', crest: '#2a78d6' };

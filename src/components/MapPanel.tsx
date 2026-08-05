@@ -4,6 +4,7 @@ import 'leaflet.vectorgrid';
 import { StationState } from '../types';
 import { status as statusColor, statusLabel } from '../theme';
 import {
+  STRUCTURE_COLOR,
   WAVE_PERIOD_S,
   isRaised,
   reachColors,
@@ -12,14 +13,8 @@ import {
   velocityOf,
   waveDelaySeconds,
 } from '../utils/reachFlow';
-import {
-  attributeDownstream,
-  buildReaches,
-  orientNetwork,
-  GaugePoint,
-  JOIN_TOLERANCE_PX,
-} from '../utils/riverNetwork';
 import { UPSTREAM_REACH_FIDS } from '../data/upstreamReaches';
+import { DOWNSTREAM_SEGMENTS, DownstreamEntry, ReachSegment } from '../data/downstreamReaches';
 import { num } from '../utils/format';
 import { Layers, X } from 'lucide-react';
 
@@ -71,16 +66,11 @@ const OSM_ATTRIBUTION =
 const RIVERS_MVT_URL =
   'https://api.ellipsis-drive.com/v3/ogc/mvt/c001410b-232a-43c7-945a-2989b88f0a6d/{z}/{x}/{y}?timestampId=6890e507-e7e8-45c7-82c8-0c411563fc5d&token=epat_g6H3SbsolcBukmxPlYifqUkp5BdyUYK3e4n09WUeT1GlXP1lUFAwIDfR1JN6fRjh';
 
-/** A station further than this from any reach is not on the mapped network. */
-const MAX_SNAP_PX = 40;
-
 /**
  * The finest zoom the river tiles are actually fetched at (verified against
  * the tile source: it 400s past 14) — every further zoom just re-scales this
- * tile with a CSS transform rather than fetching new geometry. That transform
- * is what MAX_SNAP_PX, JOIN_TOLERANCE_PX and every reach's stroke-width are
- * tuned against, so both need converting away from raw screen pixels at
- * whatever zoom the map happens to be at — see zoomCorrection below.
+ * tile with a CSS transform rather than fetching new geometry, which is what
+ * inflates every reach's stroke-width past it; see weightCompensation below.
  */
 const RIVERS_MAX_NATIVE_ZOOM = 14;
 
@@ -92,30 +82,33 @@ function normalize(value: unknown): string {
     .toLowerCase();
 }
 
-/** Ground resolution of the Web Mercator tile grid, in metres per pixel. */
-function metresPerPixel(latitude: number, zoom: number): number {
-  return (156543.03392 * Math.cos((latitude * Math.PI) / 180)) / Math.pow(2, zoom);
-}
-
 /** Stable identity of a reach, so it can be restyled without a refetch. */
 function featureId(properties: Record<string, unknown>): string {
   return String(properties?.id ?? properties?.fid ?? properties?.objectid ?? '');
 }
 
+interface ReachMeta {
+  fid: number;
+  /** The source layer's structural classification — "Embalce" for a
+   *  desarenador or similar built basin, otherwise a natural watercourse. */
+  elemento: string;
+}
+
 /**
- * Maps each currently-rendered reach `<path>` to its source `fid`, so
+ * Maps each currently-rendered reach `<path>` to its source attributes, so
  * UPSTREAM_REACH_FIDS (computed once in QGIS against the same source layer)
- * can be looked up directly instead of re-deriving the network live.
+ * can be looked up directly instead of re-deriving the network live, and so
+ * a structure can be told apart from a natural channel regardless of state.
  *
  * leaflet.vectorgrid doesn't expose per-feature properties for a non-
  * interactive layer through any public API — `getFeatureId` only feeds its
  * own internal cache, keyed by whatever that callback returns (a UUID here,
  * not the fid; see the note on featureId above). This reads that cache
- * directly. It's undocumented, but it's the only way to get the fid back
- * without making the layer interactive just to read data off it.
+ * directly. It's undocumented, but it's the only way to get the properties
+ * back without making the layer interactive just to read data off it.
  */
-function collectFeatureFids(layer: L.Layer): Map<SVGPathElement, number> {
-  const byPath = new Map<SVGPathElement, number>();
+function collectFeatureMeta(layer: L.Layer): Map<SVGPathElement, ReachMeta> {
+  const byPath = new Map<SVGPathElement, ReachMeta>();
   const vectorTiles = (
     layer as unknown as {
       _vectorTiles?: Record<
@@ -133,11 +126,92 @@ function collectFeatureFids(layer: L.Layer): Map<SVGPathElement, number> {
       const { properties, _path } = features[key].feature;
       const fid = properties?.fid;
       if (_path instanceof SVGPathElement && typeof fid === 'number') {
-        byPath.set(_path, fid);
+        byPath.set(_path, { fid, elemento: String(properties?.elemento ?? '') });
       }
     }
   }
   return byPath;
+}
+
+/**
+ * Where a fragment's own midpoint falls along a segment's reference line:
+ * the segment's base distance plus however far it projects onto `coords`,
+ * measured in real metres via Leaflet's own geodesic `map.distance` rather
+ * than screen pixels — so it stays correct regardless of zoom. Without this,
+ * every fragment of a segment got the *same* distance (the one at its
+ * start), so a 5 km reach rendered as several tile fragments didn't crest
+ * progressively along its length — the whole thing pulsed in lockstep, since
+ * every fragment computed an identical animation delay. This is what makes
+ * the wave actually travel.
+ */
+function projectAlongSegment(
+  path: SVGPathElement,
+  segment: ReachSegment,
+  map: L.Map,
+  originX: number,
+  originY: number
+): number {
+  const refScreen = segment.coords.map(([lat, lng]) => {
+    const p = map.latLngToContainerPoint([lat, lng]);
+    return { x: p.x, y: p.y };
+  });
+  const cumMetres: number[] = [0];
+  for (let i = 1; i < segment.coords.length; i++) {
+    const d = map.distance(segment.coords[i - 1], segment.coords[i]);
+    cumMetres.push(cumMetres[i - 1] + d);
+  }
+
+  const length = path.getTotalLength();
+  const ctm = path.getScreenCTM();
+  if (!length || !ctm || refScreen.length < 2) return segment.baseDistanceM;
+
+  const mid = path.getPointAtLength(length * 0.5).matrixTransform(ctm);
+  const x = mid.x - originX;
+  const y = mid.y - originY;
+
+  let bestDistSq = Infinity;
+  let alongMetres = 0;
+  for (let i = 0; i < refScreen.length - 1; i++) {
+    const a = refScreen[i];
+    const b = refScreen[i + 1];
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const lenSq = dx * dx + dy * dy;
+    const t = lenSq > 0 ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lenSq)) : 0;
+    const px = a.x + t * dx;
+    const py = a.y + t * dy;
+    const distSq = (px - x) ** 2 + (py - y) ** 2;
+    if (distSq < bestDistSq) {
+      bestDistSq = distSq;
+      alongMetres = cumMetres[i] + t * (cumMetres[i + 1] - cumMetres[i]);
+    }
+  }
+  return segment.baseDistanceM + alongMetres;
+}
+
+/**
+ * Which station a rendered fragment belongs to, and how far downstream of
+ * that station it actually sits (see projectAlongSegment).
+ *
+ * `DOWNSTREAM_SEGMENTS` used to hold an array here, because a single fid in
+ * the old `redhidrica2023_loja` source could genuinely span two stations'
+ * shares of the same reach, or a station's own short clipped stretch plus a
+ * much longer unrelated one — and a `<path>` can't render half one colour
+ * and half another, so this function used to have to vote between
+ * candidates, and reject a fragment outright if it didn't land convincingly
+ * on any of them. The network layer (`redhidrica2023_loja_flujo`) now splits
+ * every such reach into its own fid at exactly the station boundary, so a
+ * fid here means exactly one station, unambiguously — nothing left to
+ * resolve, just a lookup and a projection.
+ */
+function resolveDownstreamEntry(
+  path: SVGPathElement,
+  segment: ReachSegment,
+  map: L.Map,
+  originX: number,
+  originY: number
+): DownstreamEntry {
+  return { stationId: segment.stationId, distanceM: projectAlongSegment(path, segment, map, originX, originY) };
 }
 
 type ReachKind = 'PERENNE' | 'INTERMITENTE' | 'EMBAULADO';
@@ -154,6 +228,13 @@ function reachKind(properties: Record<string, unknown>): ReachKind {
   return 'PERENNE';
 }
 
+/** A desarenador or similar built basin, per the source layer's own
+ *  classification — not a natural watercourse, so it never takes the plain
+ *  river blue. */
+function isEmbalce(properties: Record<string, unknown>): boolean {
+  return normalize(properties?.elemento).includes('embalce');
+}
+
 /**
  * How a reach is drawn from its attributes alone, the way hydrographic maps
  * draw it: solid for a perennial course, dashed when it only runs seasonally,
@@ -162,6 +243,17 @@ function reachKind(properties: Record<string, unknown>): ReachKind {
  * reach's position on the network, which the style callback is never given.
  */
 function reachStyleFor(properties: Record<string, unknown>) {
+  if (isEmbalce(properties)) {
+    return {
+      weight: 1.5,
+      color: STRUCTURE_COLOR,
+      opacity: 0.9,
+      fill: false,
+      dashArray: undefined,
+      className: 'river-reach river-reach--structure',
+    };
+  }
+
   const kind = reachKind(properties);
 
   if (kind === 'INTERMITENTE') {
@@ -282,6 +374,13 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
    * station currently has a reading, since it describes the network's shape,
    * not a live warning, and a real warning elsewhere always overrides it so a
    * click can never paint over a signal that matters.
+   *
+   * Both directions are precomputed lookups keyed by each reach's source
+   * `fid` (src/data/downstreamReaches.ts, upstreamReaches.ts) rather than
+   * derived from this on-screen geometry: a live version of the downstream
+   * side used to have the same problem the upstream side did before it moved
+   * to a lookup — reshuffling, or reaches that simply never joined the graph,
+   * depending on which tiles happened to be loaded at the current zoom.
    */
   const applyReachStates = useCallback(() => {
     const map = mapRef.current;
@@ -291,55 +390,22 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
     const paths = container.querySelectorAll<SVGPathElement>('path.river-reach');
     if (paths.length === 0) return;
 
-    const bounds = container.getBoundingClientRect();
-    const lat = map.getCenter().lat;
-    const zoom = map.getZoom();
-    const mpp = metresPerPixel(lat, zoom);
-
     // Tiles past RIVERS_MAX_NATIVE_ZOOM are the native tile re-scaled with a
-    // CSS transform, not new geometry — so a reach rendered at zoom 17 is
-    // literally the zoom-14 tile blown up 8x. A fixed pixel tolerance would
-    // therefore mean a different real-world distance (and different join and
-    // snap decisions, appearing and disappearing reaches) depending on how far
-    // past 14 the map happens to be zoomed. Scaling every pixel constant by
-    // the ratio between zoom-14 and current metres-per-pixel keeps them
-    // anchored to the same real-world distance at any zoom.
-    const zoomCorrection = metresPerPixel(lat, RIVERS_MAX_NATIVE_ZOOM) / mpp;
-    const joinTolerancePx = JOIN_TOLERANCE_PX * zoomCorrection;
-    const maxSnapPx = MAX_SNAP_PX * zoomCorrection;
-
-    // The same re-scaling inflates every stroke-width past zoom 14, since it's
-    // drawn on the tile *before* the CSS transform enlarges it. Shrinking the
-    // weight we ask for by exactly that factor cancels it out, so a line looks
-    // the same width at zoom 20 as it does at zoom 14.
+    // CSS transform, not new geometry, which inflates every stroke-width
+    // right along with it. Shrinking the weight asked for by exactly that
+    // factor cancels it out, so a line looks the same width at zoom 20 as it
+    // does at zoom 14.
+    const zoom = map.getZoom();
     const weightCompensation = Math.pow(2, Math.min(0, RIVERS_MAX_NATIVE_ZOOM - zoom));
 
-    const reaches = buildReaches(paths, bounds.left, bounds.top, mpp);
-    const drainage = orientNetwork(reaches, joinTolerancePx);
-
-    // Only gauges that are actually saying something drive the network; a
-    // station with no reading has nothing to propagate.
-    const gauges: GaugePoint[] = stationsRef.current
-      .filter((s) => s.latest !== null)
-      .map((s) => {
-        const point = map.latLngToContainerPoint([s.config.lat, s.config.lng]);
-        return { stationId: s.config.id, x: point.x, y: point.y };
-      });
-
-    const attribution = attributeDownstream(reaches, drainage, gauges, maxSnapPx);
-
-    // Precomputed (see src/data/upstreamReaches.ts) rather than derived from
-    // this same on-screen geometry, unlike everything above: a live version
-    // of this turned out to reshuffle unpredictably with zoom, because almost
-    // the whole network is one connected graph and small rendering precision
-    // differences could flip which large branch counted as "upstream".
     const upstreamFids = new Set(UPSTREAM_REACH_FIDS[activeIdRef.current] ?? []);
-    const fidByPath = upstreamFids.size > 0 && riversLayerRef.current
-      ? collectFeatureFids(riversLayerRef.current)
-      : null;
+    const metaByPath = riversLayerRef.current ? collectFeatureMeta(riversLayerRef.current) : null;
+    const bounds = container.getBoundingClientRect();
 
-    reaches.forEach(({ path }) => {
-      const attributed = attribution.get(path);
+    paths.forEach((path) => {
+      const meta = metaByPath?.get(path);
+      const segment = meta ? DOWNSTREAM_SEGMENTS[meta.fid] : undefined;
+      const attributed = segment ? resolveDownstreamEntry(path, segment, map, bounds.left, bounds.top) : undefined;
       const station = attributed
         ? stationsRef.current.find((s) => s.config.id === attributed.stationId)
         : undefined;
@@ -349,9 +415,9 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
 
       // A real warning always wins: the click-driven upstream trace only gets
       // to recolour a reach that has nothing more important to say.
-      const fid = fidByPath?.get(path);
-      const isUpstream = !raised && fid !== undefined && upstreamFids.has(fid);
-      const { rest, crest } = reachColors(status);
+      const isEmbalceReach = normalize(meta?.elemento).includes('embalce');
+      const isUpstream = !raised && meta !== undefined && upstreamFids.has(meta.fid);
+      const { rest, crest } = reachColors(status, isEmbalceReach);
       const restColour = isUpstream ? crest : rest;
       const weight = (raised ? reachWeight(status) : isUpstream ? 2 : reachWeight(status)) * weightCompensation;
 
@@ -363,12 +429,17 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
       // A station on a weir or settling structure isn't reporting an open
       // channel: its level reflects the structure's own state (silting up,
       // an outlet choked with debris) rather than a flood wave in transit, so
-      // sending a crest travelling downstream from it would show movement
-      // that isn't happening. Its own marker carries that warning instead —
-      // see the station-markers effect below.
-      const isStructure = station?.config.settings.conversionMode === 'WEIR';
+      // sending a crest travelling downstream from it — through reaches that
+      // are open channel, like st-3's fid 13303/134/13501 — would show
+      // movement that isn't happening there. The structure reach itself
+      // (fid 51, the desarenador st-3 actually sits on) is the exception:
+      // that *is* where the station's own reading lives, so it still animates
+      // to show the alert is active, just without implying it's travelling
+      // any further than the structure.
+      const stationIsStructure = station?.config.settings.conversionMode === 'WEIR';
       const velocity = velocityOf(station);
-      const animate = showWaveRef.current && isRaised(status) && velocity > 0 && attributed && !isStructure;
+      const animate =
+        showWaveRef.current && isRaised(status) && velocity > 0 && attributed && (!stationIsStructure || isEmbalceReach);
 
       if (!animate) {
         path.classList.remove('river-reach--wave');
