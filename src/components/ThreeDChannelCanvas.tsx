@@ -3,6 +3,41 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { Maximize2, RotateCcw, Sparkles, Sliders, Play, Pause, RefreshCw, AlertTriangle, Waves } from 'lucide-react';
 
+// Channel cross-section geometry: a trapezoid that widens with height,
+// matching the bank meshes' own slope below. Shared as module constants
+// (not per-effect locals) so the water geometry — rebuilt in a separate
+// effect whenever the level changes — can never drift from the banks it
+// needs to stay inside.
+const RIVER_LENGTH = 6.0;
+const RIVER_BOTTOM_Y = 0.0;
+const BANK_TOP_Y = 1.6;
+const BOTTOM_WIDTH = 1.8;
+const TOP_WIDTH = 3.2;
+
+/**
+ * The water body as a trapezoidal prism tapering from BOTTOM_WIDTH at its
+ * base to whatever width the channel actually is at `waterHeight` — the same
+ * slope the banks use — instead of a uniform-width box. A box's straight
+ * vertical sides would sit wider than the channel near the bed (since the
+ * banks are narrower there) and narrower than it higher up, so the water
+ * would visibly cut through the grass bank at any level above the lowest.
+ */
+function buildChannelWaterGeometry(waterHeight: number): THREE.ExtrudeGeometry {
+  const clampedHeight = Math.min(Math.max(waterHeight, 0.01), BANK_TOP_Y);
+  const widthAtHeight = BOTTOM_WIDTH + (clampedHeight / BANK_TOP_Y) * (TOP_WIDTH - BOTTOM_WIDTH);
+
+  const shape = new THREE.Shape();
+  shape.moveTo(-BOTTOM_WIDTH / 2, 0);
+  shape.lineTo(BOTTOM_WIDTH / 2, 0);
+  shape.lineTo(widthAtHeight / 2, clampedHeight);
+  shape.lineTo(-widthAtHeight / 2, clampedHeight);
+  shape.closePath();
+
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: RIVER_LENGTH, bevelEnabled: false });
+  geometry.translate(0, 0, -RIVER_LENGTH / 2);
+  return geometry;
+}
+
 interface ThreeDChannelCanvasProps {
   currentRawLevelCm: number;
   installationHeightCm: number;
@@ -117,11 +152,11 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
 
     // 6. Natural River Channel & Bank Terrain
     const riverGroup = new THREE.Group();
-    const riverLength = 6.0;
-    const riverBottomY = 0.0;
-    const bankTopY = 1.6;
-    const bottomWidth = 1.8;
-    const topWidth = 3.2;
+    const riverLength = RIVER_LENGTH;
+    const riverBottomY = RIVER_BOTTOM_Y;
+    const bankTopY = BANK_TOP_Y;
+    const bottomWidth = BOTTOM_WIDTH;
+    const topWidth = TOP_WIDTH;
 
     // River Bed Material (Gravel / Sand)
     const bedGeo = new THREE.BoxGeometry(bottomWidth + 0.2, 0.12, riverLength);
@@ -271,8 +306,7 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
       ior: 1.333,
     });
 
-    const waterBoxGeo = new THREE.BoxGeometry(1, 1, riverLength);
-    const waterMesh = new THREE.Mesh(waterBoxGeo, waterMat);
+    const waterMesh = new THREE.Mesh(buildChannelWaterGeometry(0.08), waterMat);
     waterMeshRef.current = waterMesh;
     waterGroup.add(waterMesh);
 
@@ -358,7 +392,7 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
           let progress = (elapsedTime * 0.9 + mesh.userData.offset) % 1;
 
           const topY = 1.37; // Sensor lens origin
-          const waterY = waterMeshRef.current ? waterMeshRef.current.position.y + (waterMeshRef.current.scale.y / 2) : 0.5;
+          const waterY = waterSurfaceRef.current ? waterSurfaceRef.current.position.y : 0.5;
           const currentY = topY - progress * (topY - waterY);
 
           mesh.position.y = currentY;
@@ -402,19 +436,21 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
   useEffect(() => {
     if (!waterMeshRef.current || !waterSurfaceRef.current || !beamConeRef.current || !pointFMeshRef.current) return;
 
-    const riverBottomY = 0.0;
-    const maxRiverHeight = 1.6; // Max bank height
+    const waterHeight = Math.max(0.08, Math.min(BANK_TOP_Y, fillRatio * BANK_TOP_Y));
+    const waterSurfaceY = RIVER_BOTTOM_Y + waterHeight;
 
-    const waterHeight = Math.max(0.08, Math.min(maxRiverHeight, fillRatio * maxRiverHeight));
-    const waterCenterY = riverBottomY + waterHeight / 2;
-    const waterSurfaceY = riverBottomY + waterHeight;
+    // Interpolate width of the water's own top edge as it rises up the sloped
+    // banks (from BOTTOM_WIDTH to TOP_WIDTH) — used for the surface sheet below;
+    // the water volume itself is rebuilt to the same slope, not scaled.
+    const currentWidth = BOTTOM_WIDTH + (waterHeight / BANK_TOP_Y) * (TOP_WIDTH - BOTTOM_WIDTH);
 
-    // Interpolate width of water surface as river rises up sloped banks (from 1.8m to 3.2m)
-    const currentWidth = 1.8 + (waterHeight / maxRiverHeight) * (3.2 - 1.8);
-
-    // 1. Update Water Volume Mesh
-    waterMeshRef.current.scale.set(currentWidth, waterHeight, 1);
-    waterMeshRef.current.position.set(0, waterCenterY, 0);
+    // 1. Rebuild the water volume to the channel's exact slope at this height
+    //    (see buildChannelWaterGeometry) instead of scaling a uniform-width
+    //    box, which would poke past the bank's grass lower down and leave a
+    //    gap higher up — the "water spilling past the channel" look.
+    const previousWaterGeometry = waterMeshRef.current.geometry;
+    waterMeshRef.current.geometry = buildChannelWaterGeometry(waterHeight);
+    previousWaterGeometry.dispose();
 
     // 2. Update Water Surface Sheet
     waterSurfaceRef.current.scale.set(currentWidth, 1, 1);
