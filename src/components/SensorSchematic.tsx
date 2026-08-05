@@ -136,8 +136,8 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
             type="button"
             onClick={() => setView('2D')}
             aria-pressed={view === '2D'}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] ${
-              view === '2D' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+              view === '2D' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
@@ -147,8 +147,8 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
             type="button"
             onClick={() => setView('3D')}
             aria-pressed={view === '3D'}
-            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] ${
-              view === '3D' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+              view === '3D' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'
             }`}
           >
             <Box className="w-3.5 h-3.5" />
@@ -168,7 +168,7 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
           {view === '3D' ? (
             <Suspense
               fallback={
-                <div className="h-[340px] flex items-center justify-center bg-[#faf9f7] border border-hairline rounded-md text-[12px] text-ink-3">
+                <div className="h-[340px] flex items-center justify-center bg-hover-soft border border-hairline rounded-md text-[12px] text-ink-3">
                   Cargando vista 3D…
                 </div>
               }
@@ -185,7 +185,7 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
               />
             </Suspense>
           ) : (
-            <div className="h-[340px] bg-[#faf9f7] border border-hairline rounded-md">
+            <div className="h-[340px] bg-hover-soft border border-hairline rounded-md">
               <CutawayDiagram
                 levelCm={levelCm}
                 installationHeightCm={installationHeightCm}

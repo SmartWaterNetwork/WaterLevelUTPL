@@ -714,7 +714,7 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
                   id="basemap"
                   value={basemap}
                   onChange={(e) => setBasemap(e.target.value as BasemapStyle)}
-                  className="w-full text-[12px] border border-hairline rounded-md px-2 py-1.5 bg-surface text-ink focus:outline-none focus:border-ink-3"
+                  className="w-full text-[12px] border border-hairline rounded-md px-2 py-1.5 bg-surface text-ink focus:outline-none focus:border-ink-3 focus:ring-2 focus:ring-ink/15"
                 >
                   {BASEMAPS.map((b) => (
                     <option key={b.id} value={b.id}>

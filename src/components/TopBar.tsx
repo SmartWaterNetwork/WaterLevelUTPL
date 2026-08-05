@@ -41,7 +41,7 @@ const IconButton: React.FC<{
     disabled={disabled}
     title={label}
     aria-label={label}
-    className="relative p-2 rounded-md text-ink-2 hover:text-ink hover:bg-[#f2f1ee] transition-colors disabled:opacity-40"
+    className="relative p-2 rounded-md text-ink-2 hover:text-ink hover:bg-tint transition-colors disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
   >
     {children}
     {badge !== undefined && badge > 0 && (
@@ -88,10 +88,10 @@ export const TopBar: React.FC<TopBarProps> = ({
           type="button"
           onClick={() => onTabChange(tab.id)}
           aria-current={activeTab === tab.id ? 'page' : undefined}
-          className={`flex-1 sm:flex-none px-3.5 py-1.5 text-[12px] rounded transition-colors ${
+          className={`flex-1 sm:flex-none px-3.5 py-1.5 text-[12px] rounded transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
             activeTab === tab.id
               ? 'bg-ink text-white font-medium'
-              : 'text-ink-2 hover:text-ink hover:bg-[#f7f7f5]'
+              : 'text-ink-2 hover:text-ink hover:bg-hover'
           }`}
         >
           {tab.label}

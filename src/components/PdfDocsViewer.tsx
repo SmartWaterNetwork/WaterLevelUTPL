@@ -71,8 +71,8 @@ export const PdfDocsViewer: React.FC = () => {
             type="button"
             onClick={() => setTab(t.id)}
             aria-pressed={tab === t.id}
-            className={`px-3 py-1.5 text-[11px] rounded-md whitespace-nowrap transition-colors ${
-              tab === t.id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'
+            className={`px-3 py-1.5 text-[11px] rounded-md whitespace-nowrap transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+              tab === t.id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'
             }`}
           >
             {t.label}
@@ -111,7 +111,7 @@ export const PdfDocsViewer: React.FC = () => {
                           stroke="#c3c2b7"
                           strokeWidth="1"
                         />
-                        <circle cx="126" cy={y as number} r="8" fill="#f2f1ee" stroke="#e4e3dd" />
+                        <circle cx="126" cy={y as number} r="8" fill="var(--color-tint)" stroke="#e4e3dd" />
                         <text
                           x="126"
                           y={(y as number) + 3.5}
@@ -133,7 +133,7 @@ export const PdfDocsViewer: React.FC = () => {
                 <ol className="sm:col-span-8 space-y-2 text-[11px]">
                   {PARTS.map(([name, description], i) => (
                     <li key={name} className="flex gap-2.5">
-                      <span className="w-[18px] h-[18px] shrink-0 rounded-full bg-[#f2f1ee] border border-hairline text-ink-2 text-[10px] font-semibold flex items-center justify-center">
+                      <span className="w-[18px] h-[18px] shrink-0 rounded-full bg-tint border border-hairline text-ink-2 text-[10px] font-semibold flex items-center justify-center">
                         {i + 1}
                       </span>
                       <span className="text-ink-2">

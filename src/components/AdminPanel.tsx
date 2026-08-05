@@ -27,7 +27,7 @@ const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title
 );
 
 const inputClass =
-  'w-full border border-hairline rounded-md px-2.5 py-1.5 text-[12px] text-ink bg-surface focus:outline-none focus:border-ink-3';
+  'w-full border border-hairline rounded-md px-2.5 py-1.5 text-[12px] text-ink bg-surface focus:outline-none focus:border-ink-3 focus:ring-2 focus:ring-ink/15';
 
 const Notice: React.FC<{ tone: 'error' | 'info'; children: React.ReactNode }> = ({
   tone,
@@ -35,7 +35,7 @@ const Notice: React.FC<{ tone: 'error' | 'info'; children: React.ReactNode }> = 
 }) => (
   <p
     className={`text-[11px] rounded-md px-2.5 py-2 ${
-      tone === 'error' ? 'bg-[#fdf3f3] text-crit' : 'bg-[#f2f1ee] text-ink-2'
+      tone === 'error' ? 'bg-[#fdf3f3] text-crit' : 'bg-tint text-ink-2'
     }`}
     role={tone === 'error' ? 'alert' : undefined}
   >
@@ -68,7 +68,7 @@ const AccountBox: React.FC<{ auth: Auth }> = ({ auth }) => {
           <button
             type="button"
             onClick={() => void auth.signOut()}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] text-ink-2 border border-hairline rounded-md hover:text-ink hover:bg-[#f7f7f5] shrink-0"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] text-ink-2 border border-hairline rounded-md hover:text-ink hover:bg-hover shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
           >
             <LogOut className="w-3.5 h-3.5" />
             Salir
@@ -174,7 +174,7 @@ const StationRow: React.FC<{
   return (
     <li
       className={`flex items-center gap-3 px-3 py-2.5 border border-hairline rounded-md ${
-        inactive ? 'bg-[#faf9f7]' : 'bg-surface'
+        inactive ? 'bg-hover-soft' : 'bg-surface'
       }`}
     >
       <div className="min-w-0 flex-1">
@@ -197,7 +197,7 @@ const StationRow: React.FC<{
           disabled={busy}
           title="Editar"
           aria-label={`Editar ${station.name}`}
-          className="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-[#f2f1ee] disabled:opacity-40"
+          className="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-tint disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
         >
           <Pencil className="w-3.5 h-3.5" />
         </button>
@@ -207,7 +207,7 @@ const StationRow: React.FC<{
           disabled={busy}
           title={inactive ? 'Volver a poner en servicio' : 'Dar de baja'}
           aria-label={`${inactive ? 'Reactivar' : 'Dar de baja'} ${station.name}`}
-          className="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-[#f2f1ee] disabled:opacity-40"
+          className="p-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-tint disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
         >
           {inactive ? <Power className="w-3.5 h-3.5" /> : <PowerOff className="w-3.5 h-3.5" />}
         </button>
@@ -217,7 +217,7 @@ const StationRow: React.FC<{
           disabled={busy}
           title="Eliminar definitivamente"
           aria-label={`Eliminar ${station.name}`}
-          className="p-1.5 rounded-md text-ink-3 hover:text-crit hover:bg-[#fdf3f3] disabled:opacity-40"
+          className="p-1.5 rounded-md text-ink-3 hover:text-crit hover:bg-[#fdf3f3] disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
         >
           <Trash2 className="w-3.5 h-3.5" />
         </button>

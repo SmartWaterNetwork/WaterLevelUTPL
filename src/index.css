@@ -21,6 +21,13 @@
   --color-warn: #fab219;
   --color-crit: #d03b3b;
 
+  /* Three near-identical neutral tints, used everywhere something needs to
+     read as "hovered" or "quietly raised" against the page background —
+     named once here instead of repeated as raw hex per call site. */
+  --color-tint: #f2f1ee;
+  --color-hover: #f7f7f5;
+  --color-hover-soft: #faf9f7;
+
   --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
 }
 
@@ -123,7 +130,7 @@ body {
 }
 
 .leaflet-control-zoom a:hover {
-  background: #f7f7f5 !important;
+  background: var(--color-hover) !important;
   color: var(--color-ink) !important;
 }
 

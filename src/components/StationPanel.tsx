@@ -39,10 +39,10 @@ const StationRow: React.FC<{
       type="button"
       onClick={() => onSelect(config.id)}
       aria-pressed={isActive}
-      className={`w-full text-left px-4 py-3.5 border-l-2 transition-colors ${
+      className={`w-full text-left px-4 py-3.5 border-l-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ink/30 ${
         isActive
-          ? 'border-l-ink bg-[#f7f7f5]'
-          : 'border-l-transparent hover:bg-[#faf9f7]'
+          ? 'border-l-ink bg-hover'
+          : 'border-l-transparent hover:bg-hover-soft'
       }`}
     >
       {/* Identity + state. The dot never carries the state on its own. */}
@@ -79,7 +79,7 @@ const StationRow: React.FC<{
               />
               <div className="flex items-baseline gap-4">
                 <div>
-                  <div className="text-[22px] leading-none font-semibold text-ink">
+                  <div className="text-[22px] leading-none font-semibold text-ink tabular-nums">
                     {num(latest.level, 1)}
                     <span className="text-[12px] font-normal text-ink-3 ml-1">
                       {config.settings.levelUnit}
@@ -89,7 +89,10 @@ const StationRow: React.FC<{
                 </div>
 
                 <div>
-                  <div className="text-[15px] leading-none font-semibold" style={{ color: series.flow }}>
+                  <div
+                    className="text-[15px] leading-none font-semibold tabular-nums"
+                    style={{ color: series.flow }}
+                  >
                     {num(latest.flow, 1)}
                     <span className="text-[11px] font-normal text-ink-3 ml-1">
                       {config.settings.flowUnit}

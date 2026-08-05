@@ -167,7 +167,7 @@ const MeasureChart: React.FC<{
               dataKey="tMs"
               height={20}
               stroke={ink.axis}
-              fill="#faf9f7"
+              fill={ink.hoverSoft}
               travellerWidth={8}
               tickFormatter={() => ''}
             />
@@ -273,8 +273,8 @@ export const Hydrograph: React.FC<HydrographProps> = ({
                 key={r.id}
                 type="button"
                 onClick={() => setRange(r.id)}
-                className={`px-2.5 py-1 text-[11px] transition-colors ${
-                  range === r.id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'
+                className={`px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+                  range === r.id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'
                 }`}
               >
                 {r.label}
@@ -287,7 +287,7 @@ export const Hydrograph: React.FC<HydrographProps> = ({
             <select
               value={config.settings.resultsCount}
               onChange={(e) => onResultsCountChange(Number(e.target.value))}
-              className="bg-transparent text-ink font-medium focus:outline-none cursor-pointer tabular-nums"
+              className="bg-transparent text-ink font-medium cursor-pointer tabular-nums rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
             >
               {POINT_OPTIONS.map((p) => (
                 <option key={p} value={p}>
@@ -301,7 +301,7 @@ export const Hydrograph: React.FC<HydrographProps> = ({
             <button
               type="button"
               onClick={() => setView('CHART')}
-              className={`px-2 py-1.5 ${view === 'CHART' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'}`}
+              className={`px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${view === 'CHART' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'}`}
               title="Ver gráfico"
               aria-pressed={view === 'CHART'}
             >
@@ -310,7 +310,7 @@ export const Hydrograph: React.FC<HydrographProps> = ({
             <button
               type="button"
               onClick={() => setView('TABLE')}
-              className={`px-2 py-1.5 ${view === 'TABLE' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'}`}
+              className={`px-2 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${view === 'TABLE' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'}`}
               title="Ver tabla de datos"
               aria-pressed={view === 'TABLE'}
             >
@@ -364,7 +364,7 @@ export const Hydrograph: React.FC<HydrographProps> = ({
             </thead>
             <tbody className="divide-y divide-hairline">
               {[...data].reverse().map((d) => (
-                <tr key={d.entryId} className="hover:bg-[#faf9f7]">
+                <tr key={d.entryId} className="hover:bg-hover-soft">
                   <td className="px-4 py-1.5 text-ink-2">{fullDateTime(d.tMs)}</td>
                   <td className="px-4 py-1.5 text-right text-ink font-medium">{num(d.level, 2)}</td>
                   <td className="px-4 py-1.5 text-right text-ink">{num(d.flow, 2)}</td>

@@ -62,7 +62,7 @@ export const Drawer: React.FC<DrawerProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Cerrar panel"
-            className="p-1.5 -mr-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-[#f2f1ee]"
+            className="p-1.5 -mr-1.5 rounded-md text-ink-3 hover:text-ink hover:bg-tint focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
           >
             <X className="w-4 h-4" />
           </button>

@@ -133,8 +133,8 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
             type="button"
             onClick={() => setTab('RULES')}
             aria-pressed={tab === 'RULES'}
-            className={`px-3 py-1.5 text-[11px] ${
-              tab === 'RULES' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'
+            className={`px-3 py-1.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+              tab === 'RULES' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'
             }`}
           >
             Reglas ({alerts.length})
@@ -143,8 +143,8 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
             type="button"
             onClick={() => setTab('LOGS')}
             aria-pressed={tab === 'LOGS'}
-            className={`px-3 py-1.5 text-[11px] ${
-              tab === 'LOGS' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'
+            className={`px-3 py-1.5 text-[11px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
+              tab === 'LOGS' ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'
             }`}
           >
             Incidentes ({logs.length})

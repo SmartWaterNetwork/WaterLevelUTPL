@@ -20,6 +20,12 @@ export const ink = {
   hairline: '#e4e3dd',
   surface: '#ffffff',
   page: '#f4f4f2',
+  // Mirrors --color-tint / --color-hover / --color-hover-soft in index.css —
+  // for the few places (Recharts, inline SVG) that need a literal value
+  // instead of a Tailwind class.
+  tint: '#f2f1ee',
+  hover: '#f7f7f5',
+  hoverSoft: '#faf9f7',
 } as const;
 
 /** The two measured series. Level is the primary; flow is derived from it. */

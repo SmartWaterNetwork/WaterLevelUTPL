@@ -552,7 +552,7 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
                 setSimulatedLevelCm(currentRawLevelCm);
               }}
               aria-pressed={!isSimulating}
-              className={`px-2.5 py-1.5 ${!isSimulating ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'}`}
+              className={`px-2.5 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${!isSimulating ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'}`}
             >
               Medido
             </button>
@@ -560,7 +560,7 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
               type="button"
               onClick={() => setIsSimulating(true)}
               aria-pressed={isSimulating}
-              className={`px-2.5 py-1.5 ${isSimulating ? 'bg-ink text-white' : 'text-ink-2 hover:bg-[#f7f7f5]'}`}
+              className={`px-2.5 py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${isSimulating ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'}`}
             >
               Simulado
             </button>
@@ -606,7 +606,7 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
                   setIsSimulating(true);
                   setSimulatedLevelCm(preset.cm);
                 }}
-                className="px-2 py-1.5 rounded-md border border-hairline text-ink-2 hover:text-ink hover:bg-[#f7f7f5]"
+                className="px-2 py-1.5 rounded-md border border-hairline text-ink-2 hover:text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
               >
                 {preset.label}
                 <span className="block text-[10px] text-ink-3 tabular-nums">{preset.cm} cm</span>

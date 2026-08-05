@@ -206,7 +206,7 @@ export default function App() {
       )}
 
       {stationsAreEmpty && (
-        <div className="px-4 py-2 bg-[#f2f1ee] border-b border-hairline text-[12px] text-ink-2 shrink-0">
+        <div className="px-4 py-2 bg-tint border-b border-hairline text-[12px] text-ink-2 shrink-0">
           No hay estaciones en servicio.{' '}
           <button
             type="button"

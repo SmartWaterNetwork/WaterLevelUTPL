@@ -26,7 +26,7 @@ const Field: React.FC<{ label: string; hint?: string; children: React.ReactNode 
 );
 
 const inputClass =
-  'w-full border border-hairline rounded-md px-2.5 py-1.5 text-[12px] text-ink bg-surface tabular-nums focus:outline-none focus:border-ink-3';
+  'w-full border border-hairline rounded-md px-2.5 py-1.5 text-[12px] text-ink bg-surface tabular-nums focus:outline-none focus:border-ink-3 focus:ring-2 focus:ring-ink/15';
 
 const Section: React.FC<{ title: string; children: React.ReactNode }> = ({ title, children }) => (
   <section className="px-5 py-4 border-b border-hairline">
@@ -454,7 +454,7 @@ export const StationForm: React.FC<StationFormProps> = ({
         <button
           type="button"
           onClick={onCancel}
-          className="px-3.5 py-1.5 text-[12px] text-ink-2 border border-hairline rounded-md hover:text-ink hover:bg-[#f7f7f5]"
+          className="px-3.5 py-1.5 text-[12px] text-ink-2 border border-hairline rounded-md hover:text-ink hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
         >
           Cancelar
         </button>

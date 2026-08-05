@@ -1,4 +1,5 @@
 import React, { useId } from 'react';
+import { status as statusColor } from '../theme';
 
 interface SparklineProps {
   values: number[];
@@ -74,7 +75,7 @@ export const Sparkline: React.FC<SparklineProps> = ({
           x2={width - pad}
           y1={y(threshold)}
           y2={y(threshold)}
-          stroke="#d03b3b"
+          stroke={statusColor.ALERTA}
           strokeWidth="1"
           strokeOpacity="0.5"
         />
