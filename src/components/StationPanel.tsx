@@ -3,6 +3,7 @@ import { StationState } from '../types';
 import { series, status as statusColor, statusLabel, LEVEL_THRESHOLDS } from '../theme';
 import { num, relativeTime } from '../utils/format';
 import { Sparkline } from './Sparkline';
+import { LevelGauge } from './LevelGauge';
 import { ArrowDownRight, ArrowUpRight, Minus } from 'lucide-react';
 
 interface StationPanelProps {
@@ -69,25 +70,33 @@ const StationRow: React.FC<{
         <>
           {/* Readings. Level leads; flow is derived from it. */}
           <div className="mt-3 flex items-end justify-between gap-3">
-            <div className="flex items-baseline gap-4">
-              <div>
-                <div className="text-[22px] leading-none font-semibold text-ink">
-                  {num(latest.level, 1)}
-                  <span className="text-[12px] font-normal text-ink-3 ml-1">
-                    {config.settings.levelUnit}
-                  </span>
+            <div className="flex items-baseline gap-3">
+              <LevelGauge
+                levelCm={latest.levelCm}
+                thresholds={config.thresholds ?? LEVEL_THRESHOLDS}
+                status={status}
+                height={38}
+              />
+              <div className="flex items-baseline gap-4">
+                <div>
+                  <div className="text-[22px] leading-none font-semibold text-ink">
+                    {num(latest.level, 1)}
+                    <span className="text-[12px] font-normal text-ink-3 ml-1">
+                      {config.settings.levelUnit}
+                    </span>
+                  </div>
+                  <div className="eyebrow mt-1.5">Nivel</div>
                 </div>
-                <div className="eyebrow mt-1.5">Nivel</div>
-              </div>
 
-              <div>
-                <div className="text-[15px] leading-none font-semibold" style={{ color: series.flow }}>
-                  {num(latest.flow, 1)}
-                  <span className="text-[11px] font-normal text-ink-3 ml-1">
-                    {config.settings.flowUnit}
-                  </span>
+                <div>
+                  <div className="text-[15px] leading-none font-semibold" style={{ color: series.flow }}>
+                    {num(latest.flow, 1)}
+                    <span className="text-[11px] font-normal text-ink-3 ml-1">
+                      {config.settings.flowUnit}
+                    </span>
+                  </div>
+                  <div className="eyebrow mt-1.5">Caudal</div>
                 </div>
-                <div className="eyebrow mt-1.5">Caudal</div>
               </div>
             </div>
 

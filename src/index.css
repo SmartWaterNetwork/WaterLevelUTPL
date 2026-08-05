@@ -202,6 +202,51 @@ body {
   color: var(--color-ink-3);
 }
 
+/* The same bounded level gauge as the station panel (see LevelGauge.tsx and
+   utils/levelGauge.ts, which this mirrors), drawn here as plain HTML because
+   a Leaflet divIcon isn't React. Only shown once zoomed in close enough to
+   read it — see GAUGE_ZOOM in MapPanel.tsx — so the marker stays the plain
+   dot-and-label it always was at every other zoom level. */
+.station-gauge {
+  position: relative;
+  flex: none;
+  overflow: hidden;
+  border-radius: 2px;
+  border: 1px solid var(--color-hairline);
+  background: var(--color-page);
+}
+
+.station-gauge__tick {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+}
+
+.station-gauge__tick--precaucion {
+  background: rgb(250 178 25 / 0.75);
+}
+
+.station-gauge__tick--alerta {
+  background: rgb(208 59 59 / 0.75);
+}
+
+.station-gauge__fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  opacity: 0.82;
+}
+
+.station-gauge__fill::after {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 1px;
+  background: rgb(255 255 255 / 0.6);
+}
+
 /* A station on a weir or settling structure (desarenador) doesn't send a wave
    downstream — its level is the structure's own state, not a flood in
    transit — so the warning stays put and pulses on the marker instead. */

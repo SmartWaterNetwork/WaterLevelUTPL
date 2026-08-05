@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet.vectorgrid';
 import { StationState } from '../types';
-import { status as statusColor, statusLabel } from '../theme';
+import { status as statusColor, statusLabel, LEVEL_THRESHOLDS } from '../theme';
 import {
   STRUCTURE_COLOR,
   WAVE_PERIOD_S,
@@ -13,6 +13,7 @@ import {
   velocityOf,
   waveDelaySeconds,
 } from '../utils/reachFlow';
+import { gaugeFillPct, gaugeColor } from '../utils/levelGauge';
 import { UPSTREAM_REACH_FIDS } from '../data/upstreamReaches';
 import { DOWNSTREAM_SEGMENTS, DownstreamEntry, ReachSegment } from '../data/downstreamReaches';
 import { num } from '../utils/format';
@@ -298,8 +299,44 @@ function basemapUrl(style: BasemapStyle): string {
   return `https://api.mapbox.com/styles/v1/mapbox/${style}/tiles/512/{z}/{x}/{y}@2x?access_token=${MAPBOX_TOKEN}`;
 }
 
-/** Marker markup. Labels collapse to the dot alone when zoomed far out. */
-function markerHtml(station: StationState, isActive: boolean, showLabel: boolean): string {
+/** Zoom past which the marker gains the level gauge — closer than the label
+ *  threshold below, since reading the tube and its thresholds needs more
+ *  room than reading the number next to it. */
+const GAUGE_ZOOM = 15;
+const GAUGE_WIDTH = 11;
+const GAUGE_HEIGHT = 34;
+
+/** Same bounded gauge as the station panel (see LevelGauge.tsx), built as a
+ *  plain HTML string since a Leaflet divIcon isn't React. Only called once
+ *  zoomed in past GAUGE_ZOOM. */
+function gaugeHtml(station: StationState): string {
+  const thresholds = station.config.thresholds ?? LEVEL_THRESHOLDS;
+  const hasData = station.latest !== null && station.status !== 'OFFLINE';
+  const pct = hasData ? gaugeFillPct(station.latest!.levelCm, thresholds) : 0;
+  const precaucionPct = gaugeFillPct(thresholds.precaucion, thresholds);
+  const alertaPct = gaugeFillPct(thresholds.alerta, thresholds);
+  const color = gaugeColor(station.status);
+
+  const fill =
+    hasData && pct > 0
+      ? `<span class="station-gauge__fill" style="height:${pct}%;background:${color}"></span>`
+      : '';
+
+  return `
+    <span class="station-gauge" style="width:${GAUGE_WIDTH}px;height:${GAUGE_HEIGHT}px">
+      <span class="station-gauge__tick station-gauge__tick--precaucion" style="bottom:${precaucionPct}%"></span>
+      <span class="station-gauge__tick station-gauge__tick--alerta" style="bottom:${alertaPct}%"></span>
+      ${fill}
+    </span>
+  `;
+}
+
+/**
+ * Marker markup. Labels collapse to the dot alone when zoomed far out; the
+ * level gauge only joins them once zoomed in further still (see GAUGE_ZOOM),
+ * since it needs room to actually read the thresholds on.
+ */
+function markerHtml(station: StationState, isActive: boolean, showLabel: boolean, showGauge: boolean): string {
   const color = statusColor[station.status];
   const pulse = isRaised(statusOf(station)) && station.config.settings.conversionMode === 'WEIR';
   // `color` doubles as the pulse ring's currentColor — see structureAlertPulse.
@@ -319,6 +356,7 @@ function markerHtml(station: StationState, isActive: boolean, showLabel: boolean
   return `
     <div class="station-marker__inner">
       ${dot}
+      ${showGauge ? gaugeHtml(station) : ''}
       <span class="station-marker__label">
         <span class="station-marker__name">${station.config.riverName}</span>
         <span class="station-marker__value">${value}</span>
@@ -565,12 +603,13 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
     if (!map) return;
 
     const showLabel = currentZoom >= 12;
+    const showGauge = currentZoom >= GAUGE_ZOOM;
 
     stations.forEach((station) => {
       const isActive = station.config.id === activeId;
       const icon = L.divIcon({
         className: `station-marker${isActive ? ' station-marker--active' : ''}`,
-        html: markerHtml(station, isActive, showLabel),
+        html: markerHtml(station, isActive, showLabel, showGauge),
         iconSize: undefined,
         iconAnchor: [7, 7],
       });
