@@ -11,6 +11,7 @@ import {
 import { calculateFlowRate, convertLevelValue } from '../utils/flowCalculator';
 import { STALE_AFTER_MS, levelToStatus } from '../theme';
 import { describeError, supabase } from '../lib/supabase';
+import { STATION_CROSS_SECTIONS } from '../data/stationCrossSections';
 
 /** Points pulled for the stations you are not currently looking at. */
 const BACKGROUND_POINTS = 60;
@@ -53,7 +54,8 @@ async function fetchFeeds(config: StationConfig, results: number): Promise<Thing
 }
 
 /** Feeds -> the derived, sorted samples the charts plot. */
-function toReadings(feeds: ThingSpeakFeed[], settings: ChannelSettings): Reading[] {
+function toReadings(feeds: ThingSpeakFeed[], settings: ChannelSettings, stationId: string): Reading[] {
+  const crossSection = STATION_CROSS_SECTIONS[stationId];
   return feeds
     .map((feed) => {
       const levelCm = Number(feed.field1);
@@ -67,7 +69,7 @@ function toReadings(feeds: ThingSpeakFeed[], settings: ChannelSettings): Reading
         tMs,
         levelCm,
         level: Number(convertLevelValue(levelCm, settings.levelUnit).toFixed(2)),
-        flow: Number(calculateFlowRate(levelCm, settings).toFixed(2)),
+        flow: Number(calculateFlowRate(levelCm, settings, crossSection).toFixed(2)),
       } satisfies Reading;
     })
     .filter((r): r is Reading => r !== null)
@@ -225,7 +227,7 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
     () =>
       resolved.map((config) => {
         const channel = channels[config.id] ?? emptyChannel;
-        const readings = toReadings(channel.feeds, config.settings);
+        const readings = toReadings(channel.feeds, config.settings, config.id);
         const latest = readings.length > 0 ? readings[readings.length - 1] : null;
         const isStale = latest !== null && now - latest.tMs > STALE_AFTER_MS;
 

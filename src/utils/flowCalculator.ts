@@ -1,4 +1,25 @@
 import { LevelUnit, FlowUnit, ConversionMode, ChannelSettings, Reading } from '../types';
+import { CrossSectionPoint, crossSectionArea, crossSectionWettedPerimeter, waterCrossSectionPoints } from './crossSection';
+
+/**
+ * Wetted area (m²) and wetted perimeter (m) at a given depth — from the
+ * station's real surveyed cross-section when there is one, falling back to
+ * the configured rectangular approximation (`channelWidth` as a constant
+ * width, straight vertical walls) when there isn't. A rectangle was always
+ * only a placeholder for "we don't know the real shape yet", not a property
+ * of Manning's equation itself — the equation works over any cross-section.
+ */
+function wettedGeometryAt(
+  depthM: number,
+  channelWidthM: number,
+  crossSection?: CrossSectionPoint[]
+): { area: number; wettedPerimeter: number } {
+  if (crossSection) {
+    const points = waterCrossSectionPoints(crossSection, depthM);
+    return { area: crossSectionArea(points), wettedPerimeter: crossSectionWettedPerimeter(points) };
+  }
+  return { area: channelWidthM * depthM, wettedPerimeter: channelWidthM + 2 * depthM };
+}
 
 /**
  * Converts water level reading (assumed in raw cm from sensor field1) to the target LevelUnit.
@@ -23,7 +44,8 @@ export function convertLevelValue(rawLevelCm: number, targetUnit: LevelUnit): nu
  */
 export function calculateFlowRate(
   rawLevelCm: number,
-  settings: ChannelSettings
+  settings: ChannelSettings,
+  crossSection?: CrossSectionPoint[]
 ): number {
   const depthM = Math.max(0, rawLevelCm / 100); // Depth in meters
   if (depthM <= 0) return 0;
@@ -32,17 +54,17 @@ export function calculateFlowRate(
 
   switch (settings.conversionMode) {
     case 'MANNING': {
-      // Manning's equation for rectangular open channel:
-      // Q = (1/n) * A * R^(2/3) * S^(1/2)
-      // A = B * H
-      // P = B + 2H
-      // R = A / P
-      const B = Math.max(0.1, settings.channelWidth || 0.5); // meters width
+      // Manning's equation, over the real cross-section when there is one:
+      // Q = (1/n) * A * R^(2/3) * S^(1/2), R = A / P
+      const B = Math.max(0.1, settings.channelWidth || 0.5); // meters width, fallback only
       const n = Math.max(0.005, settings.manningN || 0.013); // roughness
       const S = Math.max(0.0001, settings.channelSlope || 0.002); // slope
 
-      const A = B * depthM;
-      const P = B + 2 * depthM;
+      const { area: A, wettedPerimeter: P } = wettedGeometryAt(depthM, B, crossSection);
+      if (A <= 0 || P <= 0) {
+        flowLps = 0;
+        break;
+      }
       const R = A / P;
 
       const Q_m3s = (1 / n) * A * Math.pow(R, 2 / 3) * Math.sqrt(S);
@@ -92,7 +114,11 @@ export function calculateFlowRate(
  * for the other conversions it falls back to continuity, v = Q / A. It is what
  * drives how fast the river animation moves downstream on the map.
  */
-export function calculateVelocity(rawLevelCm: number, settings: ChannelSettings): number {
+export function calculateVelocity(
+  rawLevelCm: number,
+  settings: ChannelSettings,
+  crossSection?: CrossSectionPoint[]
+): number {
   const depthM = Math.max(0, rawLevelCm / 100);
   if (depthM <= 0) return 0;
 
@@ -101,13 +127,20 @@ export function calculateVelocity(rawLevelCm: number, settings: ChannelSettings)
   if (settings.conversionMode === 'MANNING') {
     const n = Math.max(0.005, settings.manningN || 0.013);
     const S = Math.max(0.0001, settings.channelSlope || 0.002);
-    const R = (B * depthM) / (B + 2 * depthM);
+    const { area: A, wettedPerimeter: P } = wettedGeometryAt(depthM, B, crossSection);
+    if (A <= 0 || P <= 0) return 0;
+    const R = A / P;
     return (1 / n) * Math.pow(R, 2 / 3) * Math.sqrt(S);
   }
 
+  // Continuity, v = Q / A — real wetted area when available, independent of
+  // which formula estimated Q (the weir/linear/direct formulas above are
+  // untouched; only the area behind this velocity figure gets more accurate).
+  const { area: A } = wettedGeometryAt(depthM, B, crossSection);
+  if (A <= 0) return 0;
   // calculateFlowRate returns the configured unit, so ask it for L/s explicitly.
-  const flowLps = calculateFlowRate(rawLevelCm, { ...settings, flowUnit: 'L/s' });
-  return flowLps / 1000 / (B * depthM);
+  const flowLps = calculateFlowRate(rawLevelCm, { ...settings, flowUnit: 'L/s' }, crossSection);
+  return flowLps / 1000 / A;
 }
 
 /**

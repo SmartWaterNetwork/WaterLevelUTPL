@@ -1,6 +1,7 @@
 import { StationState } from '../types';
 import { status as statusColor } from '../theme';
 import { calculateVelocity } from './flowCalculator';
+import { STATION_CROSS_SECTIONS } from '../data/stationCrossSections';
 
 /**
  * How a gauge's reading is carried onto the river network.
@@ -31,7 +32,8 @@ export function statusOf(station: StationState | undefined): ReachStatus {
 /** Water velocity the gauge implies, in m/s; 0 when it is not reporting. */
 export function velocityOf(station: StationState | undefined): number {
   if (!station?.latest) return 0;
-  return calculateVelocity(station.latest.levelCm, station.config.settings);
+  const crossSection = STATION_CROSS_SECTIONS[station.config.id];
+  return calculateVelocity(station.latest.levelCm, station.config.settings, crossSection);
 }
 
 /** A desarenador or similar built basin — a structure, not a watercourse —

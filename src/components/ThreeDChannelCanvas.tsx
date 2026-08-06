@@ -1,36 +1,63 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { Maximize2, RotateCcw, Sparkles, Sliders, Play, Pause, RefreshCw, AlertTriangle, Waves } from 'lucide-react';
+import { Maximize2, RotateCcw } from 'lucide-react';
+import { CrossSectionPoint, waterCrossSectionPoints } from '../utils/crossSection';
 
-// Channel cross-section geometry: a trapezoid that widens with height,
-// matching the bank meshes' own slope below. Shared as module constants
-// (not per-effect locals) so the water geometry — rebuilt in a separate
-// effect whenever the level changes — can never drift from the banks it
-// needs to stay inside.
+/** Used only if a station has no cross-section on record — a generic,
+ *  gently sloped placeholder so the view still renders something sane. */
+const FALLBACK_CROSS_SECTION: CrossSectionPoint[] = [
+  [-20, 2.4], [-10, 1.2], [-3, 0.3], [0, 0], [3, 0.3], [10, 1.2], [20, 2.4],
+];
+
+// Real channels here are a metre or two deep across 25–30 m of width per
+// side — at true 1:1 scale that reads as an almost flat line. The height
+// axis is deliberately scaled up relative to the width axis (~4x) so the
+// shape stays legible, the same convention cross-section plots in HEC-RAS
+// and similar tools use for the same reason — it's disclosed in the UI
+// rather than left implicit.
+const HORIZONTAL_SCALE = 0.09;
+const VERTICAL_SCALE = 0.38;
+const VERTICAL_EXAGGERATION = VERTICAL_SCALE / HORIZONTAL_SCALE;
+
 const RIVER_LENGTH = 6.0;
-const RIVER_BOTTOM_Y = 0.0;
-const BANK_TOP_Y = 1.6;
-const BOTTOM_WIDTH = 1.8;
-const TOP_WIDTH = 3.2;
+/** Purely visual thickness under the lowest surveyed point, so the terrain
+ *  extrudes into a solid block instead of a paper-thin surface. */
+const FLOOR_Y = -0.4;
 
-/**
- * The water body as a trapezoidal prism tapering from BOTTOM_WIDTH at its
- * base to whatever width the channel actually is at `waterHeight` — the same
- * slope the banks use — instead of a uniform-width box. A box's straight
- * vertical sides would sit wider than the channel near the bed (since the
- * banks are narrower there) and narrower than it higher up, so the water
- * would visibly cut through the grass bank at any level above the lowest.
- */
-function buildChannelWaterGeometry(waterHeight: number): THREE.ExtrudeGeometry {
-  const clampedHeight = Math.min(Math.max(waterHeight, 0.01), BANK_TOP_Y);
-  const widthAtHeight = BOTTOM_WIDTH + (clampedHeight / BANK_TOP_Y) * (TOP_WIDTH - BOTTOM_WIDTH);
+function terrainMaxHeightM(crossSection: CrossSectionPoint[]): number {
+  return Math.max(...crossSection.map(([, h]) => h));
+}
 
+function terrainHalfWidthM(crossSection: CrossSectionPoint[]): number {
+  return Math.max(...crossSection.map(([x]) => Math.abs(x)));
+}
+
+/** The real channel shape as a solid block: the surveyed profile on top,
+ *  closed off with a flat floor below the invert. */
+function buildTerrainGeometry(crossSection: CrossSectionPoint[]): THREE.ExtrudeGeometry {
   const shape = new THREE.Shape();
-  shape.moveTo(-BOTTOM_WIDTH / 2, 0);
-  shape.lineTo(BOTTOM_WIDTH / 2, 0);
-  shape.lineTo(widthAtHeight / 2, clampedHeight);
-  shape.lineTo(-widthAtHeight / 2, clampedHeight);
+  const [x0] = crossSection[0];
+  shape.moveTo(x0 * HORIZONTAL_SCALE, FLOOR_Y);
+  crossSection.forEach(([x, h]) => shape.lineTo(x * HORIZONTAL_SCALE, h * VERTICAL_SCALE));
+  const [xLast] = crossSection[crossSection.length - 1];
+  shape.lineTo(xLast * HORIZONTAL_SCALE, FLOOR_Y);
+  shape.closePath();
+
+  const geometry = new THREE.ExtrudeGeometry(shape, { depth: RIVER_LENGTH, bevelEnabled: false });
+  geometry.translate(0, 0, -RIVER_LENGTH / 2);
+  return geometry;
+}
+
+function buildChannelWaterGeometry(crossSection: CrossSectionPoint[], waterHeightM: number): THREE.ExtrudeGeometry {
+  const pts = waterCrossSectionPoints(crossSection, waterHeightM);
+  const shape = new THREE.Shape();
+  pts.forEach(([x, h], i) => {
+    const sx = x * HORIZONTAL_SCALE;
+    const sy = h * VERTICAL_SCALE;
+    if (i === 0) shape.moveTo(sx, sy);
+    else shape.lineTo(sx, sy);
+  });
   shape.closePath();
 
   const geometry = new THREE.ExtrudeGeometry(shape, { depth: RIVER_LENGTH, bevelEnabled: false });
@@ -47,6 +74,8 @@ interface ThreeDChannelCanvasProps {
   riverName?: string;
   locationName?: string;
   coordinates?: { lat: number; lng: number };
+  /** Real surveyed cross-section for this station — see data/stationCrossSections.ts. */
+  crossSection?: CrossSectionPoint[];
 }
 
 export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
@@ -58,6 +87,7 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
   riverName = 'Río Malacatos',
   locationName = 'Centro Loja',
   coordinates = { lat: -4.025112, lng: -79.200527 },
+  crossSection = FALLBACK_CROSS_SECTION,
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -87,6 +117,11 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
   const pointFMeshRef = useRef<THREE.Mesh | null>(null);
   const pulseRingsGroupRef = useRef<THREE.Group | null>(null);
   const waterGeometryRef = useRef<THREE.PlaneGeometry | null>(null);
+  /** Set once at scene setup from this station's real terrain — the level
+   *  effect and the radar-pulse animation both need it and neither rebuilds
+   *  the terrain, so it's cheaper to cache than to recompute every frame. */
+  const sensorOriginYRef = useRef<number>(1.37);
+  const resetTargetRef = useRef(new THREE.Vector3(0, 0.8, 0));
 
   // Calculations
   const emptyHeightCm = Math.max(0, installationHeightCm - activeLevelCm);
@@ -99,6 +134,9 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
     const width = containerRef.current.clientWidth || 600;
     const height = containerRef.current.clientHeight || 400;
 
+    const halfWidth = terrainHalfWidthM(crossSection) * HORIZONTAL_SCALE;
+    const terrainMaxY = terrainMaxHeightM(crossSection) * VERTICAL_SCALE;
+
     // 1. Scene setup with soft sky color and gentle fog
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#e0f2fe'); // Sky blue light background
@@ -107,7 +145,7 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
 
     // 2. Camera setup
     const camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 100);
-    camera.position.set(3.8, 2.6, 4.6);
+    camera.position.set(3.8, terrainMaxY + 1.0, 4.6);
     cameraRef.current = camera;
 
     // 3. WebGL Renderer
@@ -124,10 +162,12 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
     rendererRef.current = renderer;
 
     // 4. Orbit Controls
+    const target = new THREE.Vector3(0, terrainMaxY * 0.45, 0);
+    resetTargetRef.current = target;
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
-    controls.target.set(0, 0.8, 0);
+    controls.target.copy(target);
     controls.maxPolarAngle = Math.PI / 2 - 0.05; // Restrict under-ground camera
     controls.minDistance = 1.8;
     controls.maxDistance = 9.0;
@@ -150,60 +190,20 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
     bounceLight.position.set(-4, -2, -4);
     scene.add(bounceLight);
 
-    // 6. Natural River Channel & Bank Terrain
+    // 6. Real Channel Terrain (one solid block, following the DEM transect)
     const riverGroup = new THREE.Group();
-    const riverLength = RIVER_LENGTH;
-    const riverBottomY = RIVER_BOTTOM_Y;
-    const bankTopY = BANK_TOP_Y;
-    const bottomWidth = BOTTOM_WIDTH;
-    const topWidth = TOP_WIDTH;
 
-    // River Bed Material (Gravel / Sand)
-    const bedGeo = new THREE.BoxGeometry(bottomWidth + 0.2, 0.12, riverLength);
-    const bedMat = new THREE.MeshStandardMaterial({
-      color: 0x78716c,
-      roughness: 0.95,
-      metalness: 0.05,
-    });
-    const bedMesh = new THREE.Mesh(bedGeo, bedMat);
-    bedMesh.position.set(0, riverBottomY - 0.06, 0);
-    bedMesh.receiveShadow = true;
-    riverGroup.add(bedMesh);
-
-    // Left River Bank (Grassy Earth Slope with Stone riprap)
-    const leftBankShape = new THREE.Shape();
-    leftBankShape.moveTo(-topWidth / 2 - 1.2, bankTopY + 0.2);
-    leftBankShape.lineTo(-bottomWidth / 2, riverBottomY);
-    leftBankShape.lineTo(-topWidth / 2, bankTopY);
-    leftBankShape.closePath();
-
-    const extrudeSettings = { depth: riverLength, bevelEnabled: false };
-    const bankGeoLeft = new THREE.ExtrudeGeometry(leftBankShape, extrudeSettings);
     const grassMat = new THREE.MeshStandardMaterial({
       color: 0x4d7c0f, // Lush natural green grass
       roughness: 0.85,
     });
-    const leftBankMesh = new THREE.Mesh(bankGeoLeft, grassMat);
-    leftBankMesh.position.z = -riverLength / 2;
-    leftBankMesh.receiveShadow = true;
-    leftBankMesh.castShadow = true;
-    riverGroup.add(leftBankMesh);
+    const terrainMesh = new THREE.Mesh(buildTerrainGeometry(crossSection), grassMat);
+    terrainMesh.receiveShadow = true;
+    terrainMesh.castShadow = true;
+    riverGroup.add(terrainMesh);
 
-    // Right River Bank
-    const rightBankShape = new THREE.Shape();
-    rightBankShape.moveTo(topWidth / 2 + 1.2, bankTopY + 0.2);
-    rightBankShape.lineTo(bottomWidth / 2, riverBottomY);
-    rightBankShape.lineTo(topWidth / 2, bankTopY);
-    rightBankShape.closePath();
-
-    const bankGeoRight = new THREE.ExtrudeGeometry(rightBankShape, extrudeSettings);
-    const rightBankMesh = new THREE.Mesh(bankGeoRight, grassMat);
-    rightBankMesh.position.z = -riverLength / 2;
-    rightBankMesh.receiveShadow = true;
-    rightBankMesh.castShadow = true;
-    riverGroup.add(rightBankMesh);
-
-    // Add River Rocks along banks
+    // Add River Rocks along banks, spaced from the terrain's own real extent
+    // rather than fixed coordinates that assumed the old generic width.
     const rockMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.9 });
     const createRock = (x: number, y: number, z: number, scale: number) => {
       const rockGeo = new THREE.DodecahedronGeometry(scale, 1);
@@ -214,52 +214,71 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
       rock.receiveShadow = true;
       riverGroup.add(rock);
     };
-
-    // Scatter rocks on river edges
-    createRock(-0.95, 0.08, -1.5, 0.14);
-    createRock(-1.05, 0.22, 0.8, 0.18);
-    createRock(0.98, 0.06, -0.4, 0.15);
-    createRock(1.15, 0.35, 1.2, 0.22);
-    createRock(-1.3, 0.5, 1.8, 0.25);
-    createRock(1.25, 0.45, -2.1, 0.2);
+    const rockX = Math.max(0.4, halfWidth * 0.55);
+    createRock(-rockX, 0.08, -1.5, 0.14);
+    createRock(-rockX * 1.1, 0.22, 0.8, 0.18);
+    createRock(rockX, 0.06, -0.4, 0.15);
+    createRock(rockX * 1.2, 0.35, 1.2, 0.22);
+    createRock(-rockX * 1.4, 0.5, 1.8, 0.25);
+    createRock(rockX * 1.3, 0.45, -2.1, 0.2);
 
     scene.add(riverGroup);
 
-    // 7. Steel Bridge Gantry crossing the river for Radar Mounting
-    const bridgeGroup = new THREE.Group();
-    const bridgeY = 1.75;
-
-    // Concrete Abutments on left & right banks
-    const abutmentMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.7 });
-    const leftAbutment = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), abutmentMat);
-    leftAbutment.position.set(-topWidth / 2 - 0.2, bankTopY + 0.1, 0);
-    leftAbutment.castShadow = true;
-    bridgeGroup.add(leftAbutment);
-
-    const rightAbutment = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.6, 0.8), abutmentMat);
-    rightAbutment.position.set(topWidth / 2 + 0.2, bankTopY + 0.1, 0);
-    rightAbutment.castShadow = true;
-    bridgeGroup.add(rightAbutment);
-
-    // Steel Beam Bridge Gantry across river
+    // 7. Cantilevered radar mount — anchored on one bank only, like the real
+    //    installations at every station: a footing and post rooted in the
+    //    bank, with a braced arm reaching out over the channel to the
+    //    invert. Nothing spans to the far bank.
+    const mountGroup = new THREE.Group();
     const steelMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.85 });
-    const mainBeam = new THREE.Mesh(new THREE.BoxGeometry(topWidth + 1.2, 0.14, 0.35), steelMat);
-    mainBeam.position.set(0, bridgeY + 0.1, 0);
-    mainBeam.castShadow = true;
-    bridgeGroup.add(mainBeam);
+    const concreteMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.7 });
 
-    // Safety Railing
-    const railMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.5 }); // Safety yellow/red
-    const railing = new THREE.Mesh(new THREE.BoxGeometry(topWidth + 1.2, 0.15, 0.04), railMat);
-    railing.position.set(0, bridgeY + 0.28, 0.16);
-    bridgeGroup.add(railing);
+    const leftEdgeXM = crossSection[0][0];
+    const leftEdgeHeightM = crossSection[0][1];
+    const armY = terrainMaxY + 0.15;
+    const postX = leftEdgeXM * HORIZONTAL_SCALE - 0.15;
+    const postGroundY = leftEdgeHeightM * VERTICAL_SCALE;
+    const postBaseY = postGroundY - 0.1; // footing set slightly into the bank, not perched on top
+    const postHeight = armY - postBaseY;
+    const armLength = Math.abs(postX); // reaches out to x=0, above the invert
 
-    scene.add(bridgeGroup);
+    // Concrete footing set into the bank
+    const footing = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.3, 0.45), concreteMat);
+    footing.position.set(postX, postBaseY, 0);
+    footing.castShadow = true;
+    mountGroup.add(footing);
 
-    // 8. FMCW Radar 80GHz Sensor Housing Mounted on Bridge Center
+    // Vertical post rising from the footing to the arm
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, postHeight, 16), steelMat);
+    post.position.set(postX, postBaseY + postHeight / 2, 0);
+    post.castShadow = true;
+    mountGroup.add(post);
+
+    // Horizontal cantilever arm — the only thing crossing the water, held
+    // up from one side only (see the brace below), never resting on the
+    // far bank.
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(armLength, 0.1, 0.12), steelMat);
+    arm.position.set(postX + armLength / 2, armY, 0);
+    arm.castShadow = true;
+    mountGroup.add(arm);
+
+    // Diagonal brace so the arm reads as structurally supported, not
+    // floating unsupported over the channel.
+    const braceStart = new THREE.Vector3(postX, armY - 0.4, 0);
+    const braceEnd = new THREE.Vector3(postX + armLength * 0.45, armY - 0.02, 0);
+    const braceVec = new THREE.Vector3().subVectors(braceEnd, braceStart);
+    const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, braceVec.length(), 12), steelMat);
+    brace.position.copy(braceStart).addScaledVector(braceVec, 0.5);
+    brace.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), braceVec.clone().normalize());
+    brace.castShadow = true;
+    mountGroup.add(brace);
+
+    scene.add(mountGroup);
+
+    // 8. FMCW Radar 80GHz Sensor Housing — hung from the end of the cantilever arm
     const sensorGroup = new THREE.Group();
-    const sensorY = 1.85;
+    const sensorY = armY + 0.1;
     sensorGroup.position.set(0, sensorY, 0);
+    sensorOriginYRef.current = sensorY - 0.48; // matches the lens/origin marker's local offset below
 
     // Mounting Bracket Arm extending downward from bridge beam
     const bracketMesh = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.3, 16), steelMat);
@@ -306,12 +325,12 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
       ior: 1.333,
     });
 
-    const waterMesh = new THREE.Mesh(buildChannelWaterGeometry(0.08), waterMat);
+    const waterMesh = new THREE.Mesh(buildChannelWaterGeometry(crossSection, 0.05), waterMat);
     waterMeshRef.current = waterMesh;
     waterGroup.add(waterMesh);
 
     // Animated River Surface Mesh with Vertices for Wave Motion
-    const surfaceGeo = new THREE.PlaneGeometry(1, riverLength, 32, 48);
+    const surfaceGeo = new THREE.PlaneGeometry(1, RIVER_LENGTH, 32, 48);
     waterGeometryRef.current = surfaceGeo;
 
     const surfaceMat = new THREE.MeshStandardMaterial({
@@ -391,7 +410,7 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
           const mesh = ring as THREE.Mesh;
           let progress = (elapsedTime * 0.9 + mesh.userData.offset) % 1;
 
-          const topY = 1.37; // Sensor lens origin
+          const topY = sensorOriginYRef.current;
           const waterY = waterSurfaceRef.current ? waterSurfaceRef.current.position.y : 0.5;
           const currentY = topY - progress * (topY - waterY);
 
@@ -430,50 +449,60 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
       resizeObserver.disconnect();
       renderer.dispose();
     };
+    // crossSection is only ever swapped by remounting the component (see the
+    // `key={station.config.id}` on the call site in SensorSchematic) — a
+    // scene built for one station's terrain has no sane way to morph into
+    // another's, so this effect intentionally doesn't react to it changing
+    // in place.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Dynamically update river water height & radar beam when level changes
   useEffect(() => {
     if (!waterMeshRef.current || !waterSurfaceRef.current || !beamConeRef.current || !pointFMeshRef.current) return;
 
-    const waterHeight = Math.max(0.08, Math.min(BANK_TOP_Y, fillRatio * BANK_TOP_Y));
-    const waterSurfaceY = RIVER_BOTTOM_Y + waterHeight;
+    const terrainMaxM = terrainMaxHeightM(crossSection);
+    // Real depth from the sensor reading, clamped just under the modelled
+    // terrain so a misconfigured installation height can't poke the water
+    // through the bank.
+    const waterHeightM = Math.max(0.03, Math.min(activeLevelCm / 100, terrainMaxM - 0.05));
+    const waterSurfaceY = waterHeightM * VERTICAL_SCALE;
 
-    // Interpolate width of the water's own top edge as it rises up the sloped
-    // banks (from BOTTOM_WIDTH to TOP_WIDTH) — used for the surface sheet below;
-    // the water volume itself is rebuilt to the same slope, not scaled.
-    const currentWidth = BOTTOM_WIDTH + (waterHeight / BANK_TOP_Y) * (TOP_WIDTH - BOTTOM_WIDTH);
-
-    // 1. Rebuild the water volume to the channel's exact slope at this height
-    //    (see buildChannelWaterGeometry) instead of scaling a uniform-width
-    //    box, which would poke past the bank's grass lower down and leave a
-    //    gap higher up — the "water spilling past the channel" look.
+    // 1. Rebuild the water volume to the real channel's exact shape at this
+    //    height (see buildChannelWaterGeometry) instead of a placeholder
+    //    slope, so it always meets the true bank instead of poking through
+    //    it lower down or leaving a gap higher up.
     const previousWaterGeometry = waterMeshRef.current.geometry;
-    waterMeshRef.current.geometry = buildChannelWaterGeometry(waterHeight);
+    waterMeshRef.current.geometry = buildChannelWaterGeometry(crossSection, waterHeightM);
     previousWaterGeometry.dispose();
 
-    // 2. Update Water Surface Sheet
-    waterSurfaceRef.current.scale.set(currentWidth, 1, 1);
+    // 2. Update Water Surface Sheet — width from where the real profile
+    //    crosses this height on each bank.
+    const crossing = waterCrossSectionPoints(crossSection, waterHeightM);
+    const xs = crossing.map(([x]) => x);
+    const currentWidth = (Math.max(...xs) - Math.min(...xs)) * HORIZONTAL_SCALE;
+    waterSurfaceRef.current.scale.set(Math.max(0.05, currentWidth), 1, 1);
     waterSurfaceRef.current.position.set(0, waterSurfaceY + 0.002, 0);
 
     // 3. Update Point F Marker
     pointFMeshRef.current.position.set(0, waterSurfaceY + 0.01, 1.2);
 
     // 4. Update Radar Beam Cone geometry scale & position
-    const sensorOriginY = 1.37;
+    const sensorOriginY = sensorOriginYRef.current;
     const beamHeight = Math.max(0.05, sensorOriginY - waterSurfaceY);
     const beamCenterY = sensorOriginY - beamHeight / 2;
     const bottomRadius = Math.tan(THREE.MathUtils.degToRad(3)) * beamHeight * 2.5 + 0.12;
 
     beamConeRef.current.scale.set(bottomRadius, beamHeight, bottomRadius);
     beamConeRef.current.position.set(0, beamCenterY, 0);
-  }, [activeLevelCm, installationHeightCm, fillRatio]);
+  }, [activeLevelCm, crossSection]);
 
   // Reset Camera angle
   const handleResetCamera = () => {
     if (controlsRef.current && cameraRef.current) {
-      cameraRef.current.position.set(3.8, 2.6, 4.6);
-      controlsRef.current.target.set(0, 0.8, 0);
+      const targetY = resetTargetRef.current.y;
+      cameraRef.current.position.set(3.8, targetY + 1.0, 4.6);
+      controlsRef.current.target.set(0, targetY, 0);
       controlsRef.current.update();
     }
   };
@@ -488,6 +517,9 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
         <div className="absolute top-2.5 left-2.5 bg-surface/95 border border-hairline rounded-md px-3 py-2 pointer-events-none max-w-[210px]">
           <div className="text-[11px] font-semibold text-ink truncate">{riverName}</div>
           <div className="text-[10px] text-ink-3 truncate">{locationName}</div>
+          <div className="text-[9px] text-ink-3 mt-1">
+            Corte real del DEM · exageración vertical ≈{VERTICAL_EXAGGERATION.toFixed(1)}×
+          </div>
           <dl className="mt-2 pt-2 border-t border-hairline space-y-1 text-[11px] tabular-nums">
             <div className="flex justify-between gap-4">
               <dt className="text-ink-3">Nivel</dt>
@@ -618,4 +650,3 @@ export const ThreeDChannelCanvas: React.FC<ThreeDChannelCanvasProps> = ({
     </div>
   );
 };
-

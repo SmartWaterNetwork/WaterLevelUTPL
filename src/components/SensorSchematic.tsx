@@ -4,6 +4,7 @@ import { StationState } from '../types';
 import { series } from '../theme';
 import { num } from '../utils/format';
 import { CATCHMENT_AREA_KM2 } from '../data/catchmentAreas';
+import { STATION_CROSS_SECTIONS } from '../data/stationCrossSections';
 
 // Three.js is ~1 MB and only the optional 3D view needs it, so it stays out of
 // the initial bundle that the map and the charts depend on.
@@ -69,9 +70,16 @@ const CutawayDiagram: React.FC<{
       {/* Radar beam */}
       <polygon points={`250,58 ${leftX + 20},${waterY} ${rightX - 20},${waterY}`} fill="url(#cutaway-beam)" />
 
+      {/* Sensor mount: cantilevered from the left bank only — a footing and
+          post rooted in the ground, matching the real installation, not a
+          structure spanning the channel. */}
+      <rect x="10" y="68" width="28" height="14" fill="#94a3b8" rx="1" />
+      <line x1="24" y1="68" x2="24" y2="12" stroke="#6c6a63" strokeWidth="4" strokeLinecap="round" />
+      <line x1="24" y1="42" x2="46" y2="14" stroke="#6c6a63" strokeWidth="2.5" strokeLinecap="round" />
+      <rect x="17" y="5" width="14" height="10" fill="#4a4841" rx="1" />
+
       {/* Sensor body */}
-      <path d="M220,12 L250,12 L250,34" stroke="#8a877e" strokeWidth="3" fill="none" />
-      <rect x="210" y="8" width="14" height="18" fill="#6c6a63" rx="2" />
+      <path d="M24,12 L250,12 L250,34" stroke="#8a877e" strokeWidth="3" fill="none" />
       <rect x="238" y="24" width="24" height="8" fill="#3a3935" />
       <rect x="230" y="32" width="40" height="20" fill="#25241f" rx="2" />
       <rect x="236" y="52" width="28" height="7" fill="#4a4841" />
@@ -120,6 +128,7 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
   const emptyHeightCm = Math.max(0, installationHeightCm - levelCm);
   const fillPercentage = Math.min(100, Math.max(0, (levelCm / installationHeightCm) * 100));
   const catchmentAreaKm2 = CATCHMENT_AREA_KM2[config.id];
+  const hasCrossSection = Boolean(STATION_CROSS_SECTIONS[config.id]);
 
   return (
     <section className="bg-surface border border-hairline rounded-lg">
@@ -174,6 +183,10 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
               }
             >
               <ThreeDChannelCanvas
+                // A scene built for one station's real terrain has no sane way
+                // to morph into another's — remount cleanly instead of trying
+                // to update the Three.js scene in place when the station changes.
+                key={config.id}
                 currentRawLevelCm={levelCm}
                 installationHeightCm={installationHeightCm}
                 levelUnit={settings.levelUnit}
@@ -182,6 +195,7 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
                 riverName={config.riverName}
                 locationName={config.locationName}
                 coordinates={{ lat: config.lat, lng: config.lng }}
+                crossSection={STATION_CROSS_SECTIONS[config.id]}
               />
             </Suspense>
           ) : (
@@ -229,7 +243,9 @@ export const SensorSchematic: React.FC<SensorSchematicProps> = ({ station }) => 
             </div>
             <p className="text-[11px] text-ink-3 mt-2 leading-relaxed">
               {settings.conversionMode === 'MANNING'
-                ? `Manning en canal rectangular · ancho ${settings.channelWidth} m · pendiente ${settings.channelSlope} · n ${settings.manningN}`
+                ? hasCrossSection
+                  ? `Manning sobre la sección real del DEM · pendiente ${settings.channelSlope} · n ${settings.manningN}`
+                  : `Manning en canal rectangular (sin sección real aún) · ancho ${settings.channelWidth} m · pendiente ${settings.channelSlope} · n ${settings.manningN}`
                 : settings.conversionMode === 'WEIR'
                 ? `Vertedero rectangular · cresta ${settings.channelWidth} m`
                 : `Factor lineal k = ${settings.linearFactor}`}
