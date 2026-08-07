@@ -69,6 +69,9 @@ export interface ChannelSettings {
   installationHeight: number; // in cm (OC height)
   sensorMaterial: 'PP' | 'STAINLESS';
   communicationType: '4-20mA' | 'RS485_MODBUS';
+  /** Unit the sensor's raw field1 value is actually transmitted in. */
+  sourceUnit: LevelUnit;
+  /** Unit the dashboard displays the level in — independent of sourceUnit. */
   levelUnit: LevelUnit;
   flowUnit: FlowUnit;
   conversionMode: ConversionMode;
@@ -126,6 +129,8 @@ export interface Reading {
   level: number;
   /** Flow derived from levelCm, in the configured flow unit. */
   flow: number;
+  /** Same flow, always in L/s — what alert thresholds are authored against, independent of the configured display unit. */
+  flowLps: number;
 }
 
 export type Trend = 'RISING' | 'FALLING' | 'STABLE';

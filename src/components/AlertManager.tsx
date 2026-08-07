@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertConfig, AlertLogItem, ChannelSettings, StationState } from '../types';
+import { AlertConfig, AlertLogItem, StationState } from '../types';
 import { playAlertChime, requestNotificationPermission, triggerPushNotification } from '../utils/flowCalculator';
 import { fullDateTime } from '../utils/format';
 import { Bell, BellOff, Check, Trash2, Volume2, VolumeX } from 'lucide-react';
@@ -9,7 +9,6 @@ interface AlertManagerProps {
   onUpdateAlerts: (alerts: AlertConfig[]) => void;
   logs: AlertLogItem[];
   onClearLogs: () => void;
-  settings: ChannelSettings;
   /** To resolve a rule's stationId into a name worth showing. */
   stations: StationState[];
 }
@@ -58,7 +57,6 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
   onUpdateAlerts,
   logs,
   onClearLogs,
-  settings,
   stations,
 }) => {
   const [pushGranted, setPushGranted] = useState<boolean>(
@@ -69,10 +67,15 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
   const patch = (id: string, changes: Partial<AlertConfig>) =>
     onUpdateAlerts(alerts.map((a) => (a.id === id ? { ...a, ...changes } : a)));
 
+  // Always the same fixed unit a rule is authored and compared in — never a
+  // station's own display unit. A rule can apply to every station at once,
+  // each with its own levelUnit/flowUnit, so there's no single "right"
+  // display unit to convert into here; showing the canonical one keeps the
+  // number on screen always meaning what it says, in every station's Config.
   const unitFor = (type: AlertConfig['type']) => {
-    if (type.includes('FLOW')) return settings.flowUnit;
-    if (type === 'RATE_OF_CHANGE') return `${settings.levelUnit}/h`;
-    return settings.levelUnit;
+    if (type.includes('FLOW')) return 'L/s';
+    if (type === 'RATE_OF_CHANGE') return 'cm/h';
+    return 'cm';
   };
 
   const scopeLabel = (stationId?: string) => {
@@ -118,7 +121,7 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
             playAlertChime('critical');
             triggerPushNotification(
               'Alerta de prueba',
-              `Nivel simulado de 65 ${settings.levelUnit} sobre el umbral configurado.`
+              'Nivel simulado de 65 cm sobre el umbral configurado.'
             );
           }}
           className="text-[11px] text-ink-2 hover:text-ink border border-hairline rounded-md px-3 py-1.5"
@@ -165,6 +168,10 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
 
       {tab === 'RULES' ? (
         <div className="p-5 space-y-3">
+          <p className="text-[11px] text-ink-3 -mt-1 mb-1">
+            Los umbrales siempre están en cm, L/s o cm/h — independientes de la unidad que cada
+            estación use en su visor.
+          </p>
           {alerts.map((alert) => {
             const unit = unitFor(alert.type);
             return (
@@ -206,7 +213,13 @@ export const AlertManager: React.FC<AlertManagerProps> = ({
                   <input
                     type="range"
                     min={0}
-                    max={alert.type.includes('FLOW') ? 500 : 200}
+                    // Río Malacatos alone regularly clears 2 m / 2000+ L/s
+                    // since the st-1/st-3 site swap, so the old 200 cm / 500
+                    // L/s ceilings could no longer even represent the
+                    // defaults (70 cm was fine, but 800 L/s already exceeded
+                    // 500) — let alone a threshold raised to reduce false
+                    // alarms at that site's now-higher baseline.
+                    max={alert.type.includes('FLOW') ? 10000 : 300}
                     step={1}
                     value={alert.threshold}
                     disabled={!alert.enabled}

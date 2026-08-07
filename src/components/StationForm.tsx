@@ -398,7 +398,21 @@ export const StationForm: React.FC<StationFormProps> = ({
 
         <Section title="Unidades">
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Nivel">
+            <Field label="Unidad real del sensor" hint="En qué unidad transmite el canal">
+              <select
+                value={form.settings.sourceUnit}
+                onChange={(e) =>
+                  setSetting('sourceUnit', e.target.value as ChannelSettings['sourceUnit'])
+                }
+                className={inputClass}
+              >
+                <option value="cm">Centímetros (cm)</option>
+                <option value="m">Metros (m)</option>
+                <option value="mm">Milímetros (mm)</option>
+                <option value="in">Pulgadas (in)</option>
+              </select>
+            </Field>
+            <Field label="Nivel en el visor" hint="Cómo se muestra, independiente de la unidad real">
               <select
                 value={form.settings.levelUnit}
                 onChange={(e) =>

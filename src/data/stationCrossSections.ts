@@ -32,12 +32,22 @@ import { CrossSectionPoint } from '../utils/crossSection';
  * Regenerate from the DEM (in QGIS, against `redhidrica2023_loja_flujo` for
  * flow direction and `estaciones_visor` for station position) if a station
  * moves, or the DEM is replaced with a better one.
+ *
+ * 2026-08: field validation found "Estación 01" and "Estación 03" were
+ * mislabeled — the site described below as st-1 (a desarenador on Río
+ * Malacatos) is physically where the st-1 sensor sits, and what's below as
+ * st-3 (the Quebrada Turunuma headwater) is physically where the st-3 sensor
+ * sits. The two full cross-sections were swapped between the keys to match;
+ * the shapes themselves are untouched, still exactly what was sampled from
+ * the DEM at each site — only which station code they're filed under changed.
+ * Prose elsewhere in this codebase describing "st-1" or "st-3" by their old
+ * river/structure may still reflect the pre-swap labels.
  */
 export const STATION_CROSS_SECTIONS: Record<string, CrossSectionPoint[]> = {
   'st-1': [
-    [-24, 2.888], [-21, 2.03], [-18, 1.594], [-15, 1.59], [-12, 1.352], [-9, 1.364],
-    [-6, 1.174], [-3, 0.51], [0, 0], [3, 0.73], [6, 1.01], [9, 1.13], [12, 1.41],
-    [15, 1.564], [18, 1.596], [21, 1.628], [24, 1.622], [26, 1.572],
+    [-30, 1.458], [-27, 1.45], [-24, 1.452], [-21, 1.464], [-18, 1.484], [-15, 1.502],
+    [-12, 1.522], [-9, 1.464], [-6, 1.06], [-3, 0.396], [0, 0], [3, 0.536], [6, 0.536],
+    [9, 0.496], [12, 1.568], [15, 1.658], [18, 2.74], [20, 2.838],
   ],
   'st-2': [
     [-25, 7.222], [-22, 7.222], [-19, 7.11], [-16, 6.92], [-13, 5.84], [-10, 4.404],
@@ -45,9 +55,9 @@ export const STATION_CROSS_SECTIONS: Record<string, CrossSectionPoint[]> = {
     [14, 3.216], [17, 3.962], [20, 4.652], [23, 5.116], [25, 5.612],
   ],
   'st-3': [
-    [-30, 1.458], [-27, 1.45], [-24, 1.452], [-21, 1.464], [-18, 1.484], [-15, 1.502],
-    [-12, 1.522], [-9, 1.464], [-6, 1.06], [-3, 0.396], [0, 0], [3, 0.536], [6, 0.536],
-    [9, 0.496], [12, 1.568], [15, 1.658], [18, 2.74], [20, 2.838],
+    [-24, 2.888], [-21, 2.03], [-18, 1.594], [-15, 1.59], [-12, 1.352], [-9, 1.364],
+    [-6, 1.174], [-3, 0.51], [0, 0], [3, 0.73], [6, 1.01], [9, 1.13], [12, 1.41],
+    [15, 1.564], [18, 1.596], [21, 1.628], [24, 1.622], [26, 1.572],
   ],
   'st-4': [
     [-24, 1.924], [-21, 1.866], [-18, 1.884], [-15, 1.846], [-12, 1.704], [-9, 1.722],

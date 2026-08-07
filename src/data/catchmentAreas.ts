@@ -29,10 +29,14 @@
  * ever needed on the map; only the area figure is used in the app today.
  *
  * Regenerate if a station moves, or a better DEM becomes available.
+ *
+ * 2026-08: st-1 and st-3's areas were swapped between the keys below to
+ * match a field-validated relabeling — see the same note in
+ * stationCrossSections.ts. The figures themselves are untouched.
  */
 export const CATCHMENT_AREA_KM2: Record<string, number> = {
-  'st-1': 20.69,
+  'st-1': 55.02,
   'st-2': 33.3,
-  'st-3': 55.02,
+  'st-3': 20.69,
   'st-4': 6.55,
 };

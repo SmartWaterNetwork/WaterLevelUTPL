@@ -210,6 +210,7 @@ export type Database = {
           precaucion_cm: number;
           river_name: string | null;
           sensor_material: Database['public']['Enums']['sensor_material'];
+          source_unit: Database['public']['Enums']['level_unit'];
           updated_at: string;
           updated_by: string | null;
         };
@@ -233,6 +234,7 @@ export type Database = {
           precaucion_cm?: number;
           river_name?: string | null;
           sensor_material?: Database['public']['Enums']['sensor_material'];
+          source_unit?: Database['public']['Enums']['level_unit'];
           updated_at?: string;
           updated_by?: string | null;
         };
@@ -256,6 +258,7 @@ export type Database = {
           precaucion_cm?: number;
           river_name?: string | null;
           sensor_material?: Database['public']['Enums']['sensor_material'];
+          source_unit?: Database['public']['Enums']['level_unit'];
           updated_at?: string;
           updated_by?: string | null;
         };
@@ -311,6 +314,7 @@ export type Database = {
           results_count: number | null;
           river_name: string | null;
           sensor_material: Database['public']['Enums']['sensor_material'] | null;
+          source_unit: Database['public']['Enums']['level_unit'] | null;
           updated_at: string | null;
           weir_crest_cm: number | null;
         };

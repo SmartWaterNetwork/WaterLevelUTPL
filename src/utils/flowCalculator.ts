@@ -22,7 +22,7 @@ function wettedGeometryAt(
 }
 
 /**
- * Converts water level reading (assumed in raw cm from sensor field1) to the target LevelUnit.
+ * Converts a canonical level in centimetres to the target LevelUnit, for display.
  */
 export function convertLevelValue(rawLevelCm: number, targetUnit: LevelUnit): number {
   switch (targetUnit) {
@@ -35,6 +35,25 @@ export function convertLevelValue(rawLevelCm: number, targetUnit: LevelUnit): nu
     case 'cm':
     default:
       return rawLevelCm;
+  }
+}
+
+/**
+ * The inverse of convertLevelValue: a sensor's raw field1 value, in whatever
+ * unit it actually transmits (sourceUnit), normalised to centimetres — the
+ * unit every calculation downstream (Manning, thresholds, gauges) assumes.
+ */
+export function toCentimeters(rawValue: number, sourceUnit: LevelUnit): number {
+  switch (sourceUnit) {
+    case 'm':
+      return rawValue * 100;
+    case 'mm':
+      return rawValue / 10;
+    case 'in':
+      return rawValue * 2.54;
+    case 'cm':
+    default:
+      return rawValue;
   }
 }
 

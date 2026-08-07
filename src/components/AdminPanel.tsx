@@ -448,6 +448,7 @@ function emptyDraft(existing: StationConfig[]): StationDraft {
       installationHeight: 100,
       sensorMaterial: 'PP',
       communicationType: '4-20mA',
+      sourceUnit: 'cm',
       levelUnit: 'cm',
       flowUnit: 'L/s',
       conversionMode: 'MANNING',

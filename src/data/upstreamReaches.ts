@@ -73,20 +73,26 @@
  * .../VISOR/ProyectoQGIS.qgz for the layers this was derived from
  * (estaciones_visor for station positions, HydroRIVERS_loja_ref to verify
  * flow direction).
+ *
+ * 2026-08: st-1 and st-3's fid lists were swapped between the keys below to
+ * match a field-validated relabeling — see the same note in
+ * stationCrossSections.ts. The fid lists themselves are untouched; the
+ * doc comment above (referring to "st-1" and "st-3" by their old
+ * river/structure) still describes the pre-swap labels.
  */
 export const UPSTREAM_REACH_FIDS: Record<string, number[]> = {
   'st-1': [
+    22, 23, 25, 26, 28, 30, 31, 32, 35, 52, 90, 91, 111, 129, 130, 132, 2401, 2402, 3601, 3602,
+    13301, 13302,
+  ],
+  'st-2': [5302],
+  'st-3': [
     13, 14, 54, 55, 56, 59, 60, 61, 68, 70, 71, 72, 73, 81, 82, 83, 89, 93, 96, 99, 101, 102,
     103, 108, 110, 121, 122, 123, 124, 127, 128, 137, 5801, 5802, 5803, 5804, 5805, 5806, 5807,
     5808, 5809, 5810, 5811, 5812, 5813, 5814, 5815, 5816, 5817, 5818, 5819, 5820, 5821, 5822, 5823,
     5824, 5825, 5826, 5827, 5828, 5829, 5830, 5831, 5832, 5833, 5834, 5835, 5836, 5837, 5838, 5839,
     5840, 5841, 5842, 5843, 5844, 5845, 6401, 6402, 6601, 6602, 6901, 6902, 6903, 6904, 8401, 8402,
     8801, 8802, 11801, 11802, 11803, 49801, 49802, 49803, 49804,
-  ],
-  'st-2': [5302],
-  'st-3': [
-    22, 23, 25, 26, 28, 30, 31, 32, 35, 52, 90, 91, 111, 129, 130, 132, 2401, 2402, 3601, 3602,
-    13301, 13302,
   ],
   'st-4': [31, 35, 129, 3601],
 };

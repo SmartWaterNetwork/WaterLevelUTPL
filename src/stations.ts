@@ -6,6 +6,7 @@ const baseSettings: Omit<ChannelSettings, 'channelId' | 'apiKey' | 'installation
   autoRefreshInterval: 30,
   sensorMaterial: 'PP',
   communicationType: '4-20mA',
+  sourceUnit: 'cm',
   levelUnit: 'cm',
   flowUnit: 'L/s',
   conversionMode: 'MANNING',

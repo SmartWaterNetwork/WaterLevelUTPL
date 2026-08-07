@@ -6,7 +6,13 @@ import { useStationNetwork } from './hooks/useStationNetwork';
 import { useStationCatalog } from './hooks/useStationCatalog';
 import { useAuth } from './hooks/useAuth';
 import { configToDraft, saveStation } from './lib/stationsApi';
-import { levelRateOfChange, playAlertChime, triggerPushNotification } from './utils/flowCalculator';
+import {
+  convertFlowUnit,
+  convertLevelValue,
+  levelRateOfChange,
+  playAlertChime,
+  triggerPushNotification,
+} from './utils/flowCalculator';
 import { TabId, TopBar } from './components/TopBar';
 import { StationPanel } from './components/StationPanel';
 import { StationSheet } from './components/StationSheet';
@@ -54,11 +60,14 @@ const DEFAULT_ALERTS: AlertConfig[] = [
     soundAlert: true,
   },
   {
-    // st-3 sits on a desarenador, not an open channel: a rise there is as
-    // likely to mean the weir outlet is choked with debris as it is to mean
-    // more water is coming down the Malacatos. 15 cm/h is a starting point —
-    // no live readings were available to calibrate it against; tighten it
-    // once real data is flowing.
+    // The desarenador sits on a weir, not an open channel: a rise there is as
+    // likely to mean the outlet is choked with debris as it is to mean more
+    // water is coming down the Malacatos. 15 cm/h is a starting point — no
+    // live readings were available to calibrate it against; tighten it once
+    // real data is flowing.
+    // 2026-08: field validation found st-1 and st-3 were mislabeled — the
+    // desarenador is physically st-1's site now, not st-3's; see the note in
+    // stationCrossSections.ts.
     id: 'rule-rate-st3',
     name: 'Subida rápida en el desarenador',
     type: 'RATE_OF_CHANGE',
@@ -67,7 +76,7 @@ const DEFAULT_ALERTS: AlertConfig[] = [
     severity: 'warning',
     pushNotification: true,
     soundAlert: false,
-    stationId: 'st-3',
+    stationId: 'st-1',
   },
 ];
 
@@ -113,28 +122,41 @@ export default function App() {
       if (!rule.enabled) return;
       if (rule.stationId && rule.stationId !== config.id) return;
 
+      // rule.threshold is always authored in a fixed canonical unit — cm for
+      // level, L/s for flow, cm/h for rate of change — regardless of what
+      // this particular station displays (see AlertManager.tsx). Triggering
+      // compares canonical to canonical; only the message converts the
+      // threshold into the station's own display unit, to read next to a
+      // value that's already in it.
       let triggered = false;
       let value = latest.level;
       let unit: string = config.settings.levelUnit;
+      let thresholdDisplay = rule.threshold;
 
-      if (rule.type === 'MAX_LEVEL' && latest.levelCm >= rule.threshold) triggered = true;
-      else if (rule.type === 'MIN_LEVEL' && latest.levelCm <= rule.threshold) triggered = true;
-      else if (rule.type === 'MAX_FLOW' && latest.flow >= rule.threshold) {
+      if (rule.type === 'MAX_LEVEL' && latest.levelCm >= rule.threshold) {
+        triggered = true;
+        thresholdDisplay = convertLevelValue(rule.threshold, config.settings.levelUnit);
+      } else if (rule.type === 'MIN_LEVEL' && latest.levelCm <= rule.threshold) {
+        triggered = true;
+        thresholdDisplay = convertLevelValue(rule.threshold, config.settings.levelUnit);
+      } else if (rule.type === 'MAX_FLOW' && latest.flowLps >= rule.threshold) {
         triggered = true;
         value = latest.flow;
         unit = config.settings.flowUnit;
+        thresholdDisplay = convertFlowUnit(rule.threshold, config.settings.flowUnit);
       } else if (rule.type === 'RATE_OF_CHANGE') {
-        const rate = levelRateOfChange(station.readings, RATE_OF_CHANGE_WINDOW_MIN);
-        if (rate !== null && rate >= rule.threshold) {
+        const rateCmH = levelRateOfChange(station.readings, RATE_OF_CHANGE_WINDOW_MIN);
+        if (rateCmH !== null && rateCmH >= rule.threshold) {
           triggered = true;
-          value = rate;
+          value = convertLevelValue(rateCmH, config.settings.levelUnit);
           unit = `${config.settings.levelUnit}/h`;
+          thresholdDisplay = convertLevelValue(rule.threshold, config.settings.levelUnit);
         }
       }
 
       if (!triggered) return;
 
-      const message = `${config.riverName}: ${value.toFixed(1)} ${unit} (umbral ${rule.threshold} ${unit})`;
+      const message = `${config.riverName}: ${value.toFixed(1)} ${unit} (umbral ${thresholdDisplay.toFixed(1)} ${unit})`;
       setBanner(message);
       setLogs((prev) => [
         {
@@ -273,7 +295,6 @@ export default function App() {
             onUpdateAlerts={setAlerts}
             logs={logs}
             onClearLogs={() => setLogs([])}
-            settings={active.config.settings}
             stations={stations}
           />
         )}
