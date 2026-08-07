@@ -46,6 +46,19 @@ export function num(value: number | null | undefined, decimals = 1): string {
   return value.toFixed(decimals);
 }
 
+/**
+ * "YYYY-MM-DD HH:MM:SS" in UTC, the format ThingSpeak's start/end params
+ * expect. ThingSpeak channels default to UTC unless the owner changes it, and
+ * nothing in this project's setup does — sending UTC keeps the query correct
+ * regardless of which timezone the viewer's own browser happens to be in.
+ */
+export function thingSpeakDateTime(d: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())} ${pad(
+    d.getUTCHours()
+  )}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`;
+}
+
 /** datetime-local input value for a Date. */
 export function toDateTimeLocal(d: Date): string {
   if (Number.isNaN(d.getTime())) return '';

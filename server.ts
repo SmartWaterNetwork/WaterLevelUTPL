@@ -13,10 +13,13 @@ async function startServer() {
     try {
       const channelId = req.query.channelId ? String(req.query.channelId) : "3440458";
       const apiKey = req.query.apiKey ? String(req.query.apiKey) : "";
-      const results = req.query.results ? String(req.query.results) : "60";
       const start = req.query.start ? String(req.query.start) : "";
       const end = req.query.end ? String(req.query.end) : "";
       const minutes = req.query.minutes ? String(req.query.minutes) : "";
+      // A date range wants everything ThingSpeak has in that window, not "the
+      // last 60" — only fall back to the small live-poll default when neither
+      // a range nor an explicit count was requested.
+      const results = req.query.results ? String(req.query.results) : start || end ? "8000" : "60";
 
       let url = `https://api.thingspeak.com/channels/${encodeURIComponent(channelId)}/feeds.json?results=${encodeURIComponent(results)}`;
       if (apiKey) url += `&api_key=${encodeURIComponent(apiKey)}`;

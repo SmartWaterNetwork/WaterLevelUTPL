@@ -1,80 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ChannelSettings,
-  Reading,
-  StationConfig,
-  StationState,
-  ThingSpeakFeed,
-  ThingSpeakResponse,
-  Trend,
-} from '../types';
-import { calculateFlowRate, convertLevelValue } from '../utils/flowCalculator';
+import { ChannelSettings, Reading, StationConfig, StationState, ThingSpeakFeed, Trend } from '../types';
 import { STALE_AFTER_MS, levelToStatus } from '../theme';
-import { describeError, supabase } from '../lib/supabase';
-import { STATION_CROSS_SECTIONS } from '../data/stationCrossSections';
+import { fetchStationFeeds } from '../lib/thingspeak';
+import { feedsToReadings } from '../utils/readings';
 
 /** Points pulled for the stations you are not currently looking at. */
 const BACKGROUND_POINTS = 60;
 
 /** A rise or fall smaller than this (cm) over the window still reads as stable. */
 const TREND_DEADBAND_CM = 0.5;
-
-async function fetchFeeds(config: StationConfig, results: number): Promise<ThingSpeakFeed[]> {
-  // A station from the database has no key in the browser to fetch with: the
-  // edge function holds it and returns only the readings.
-  if (config.remote && supabase) {
-    const { data, error } = await supabase.functions.invoke<ThingSpeakResponse>('station-feed', {
-      body: { station: config.id, results },
-    });
-    if (error) throw new Error(`${config.name}: ${await describeError(error)}`);
-    return data?.feeds ?? [];
-  }
-
-  const { channelId } = config.settings;
-  const apiKey = config.settings.apiKey || '';
-  const proxyUrl = `/api/thingspeak?channelId=${channelId}&apiKey=${apiKey}&results=${results}`;
-
-  let data: ThingSpeakResponse | null = null;
-  const res = await fetch(proxyUrl);
-
-  if (res.ok) {
-    data = await res.json();
-  } else {
-    // The Express proxy is not always in front of us (static hosting, preview
-    // builds); fall back to ThingSpeak directly, which allows CORS.
-    const directUrl =
-      `https://api.thingspeak.com/channels/${channelId}/feeds.json?results=${results}` +
-      (apiKey ? `&api_key=${apiKey}` : '');
-    const direct = await fetch(directUrl);
-    if (!direct.ok) throw new Error(`Canal ${channelId}: ${direct.status} ${direct.statusText}`);
-    data = await direct.json();
-  }
-
-  return data?.feeds ?? [];
-}
-
-/** Feeds -> the derived, sorted samples the charts plot. */
-function toReadings(feeds: ThingSpeakFeed[], settings: ChannelSettings, stationId: string): Reading[] {
-  const crossSection = STATION_CROSS_SECTIONS[stationId];
-  return feeds
-    .map((feed) => {
-      const levelCm = Number(feed.field1);
-      if (feed.field1 === null || feed.field1 === '' || Number.isNaN(levelCm)) return null;
-      const tMs = new Date(feed.created_at).getTime();
-      if (Number.isNaN(tMs)) return null;
-
-      return {
-        entryId: feed.entry_id,
-        iso: feed.created_at,
-        tMs,
-        levelCm,
-        level: Number(convertLevelValue(levelCm, settings.levelUnit).toFixed(2)),
-        flow: Number(calculateFlowRate(levelCm, settings, crossSection).toFixed(2)),
-      } satisfies Reading;
-    })
-    .filter((r): r is Reading => r !== null)
-    .sort((a, b) => a.tMs - b.tMs);
-}
 
 /** Compares the mean of the two halves of the window. */
 function computeTrend(readings: Reading[]): Trend {
@@ -162,7 +96,7 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
             : Math.min(config.settings.resultsCount, BACKGROUND_POINTS);
 
         try {
-          const feeds = await fetchFeeds(config, points);
+          const feeds = await fetchStationFeeds(config, { results: points });
           setChannels((prev) => ({
             ...prev,
             [config.id]: { feeds, loading: false, error: null, fetched: true },
@@ -227,7 +161,7 @@ export function useStationNetwork(configs: StationConfig[]): StationNetwork {
     () =>
       resolved.map((config) => {
         const channel = channels[config.id] ?? emptyChannel;
-        const readings = toReadings(channel.feeds, config.settings, config.id);
+        const readings = feedsToReadings(channel.feeds, config.settings, config.id);
         const latest = readings.length > 0 ? readings[readings.length - 1] : null;
         const isStale = latest !== null && now - latest.tMs > STALE_AFTER_MS;
 

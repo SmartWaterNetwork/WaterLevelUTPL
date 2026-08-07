@@ -244,14 +244,7 @@ export default function App() {
             </div>
           ) : active ? (
             <div className="h-full overflow-y-auto thin-scroll p-3 sm:p-4 pb-24 lg:pb-4 space-y-4">
-              <Hydrograph
-                station={active}
-                alerts={alerts}
-                onRefresh={network.refresh}
-                onResultsCountChange={(count) =>
-                  updateSettings(activeId, { ...active.config.settings, resultsCount: count })
-                }
-              />
+              <Hydrograph station={active} alerts={alerts} onRefresh={network.refresh} />
               <SensorSchematic station={active} />
             </div>
           ) : (

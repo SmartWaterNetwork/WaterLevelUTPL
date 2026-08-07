@@ -57,15 +57,24 @@ Deno.serve(async (req) => {
   const url = new URL(req.url);
   let code = url.searchParams.get('station') ?? '';
   let results = Number(url.searchParams.get('results') ?? 0);
+  let start = url.searchParams.get('start') ?? '';
+  let end = url.searchParams.get('end') ?? '';
 
   if (req.method === 'POST') {
     const body = await req.json().catch(() => ({}));
     if (typeof body.station === 'string') code = body.station;
     if (body.results !== undefined) results = Number(body.results);
+    if (typeof body.start === 'string') start = body.start;
+    if (typeof body.end === 'string') end = body.end;
   }
 
   if (!code) return json({ error: 'Falta el código de la estación' }, 400);
-  results = Math.min(Math.max(Math.trunc(results) || DEFAULT_RESULTS, 1), MAX_RESULTS);
+
+  // A date range asks ThingSpeak for everything in the window, not "the last
+  // N" — an explicit `results` still caps it, but the small live-poll default
+  // has no business truncating a month of history down to 60 points.
+  const hasRange = Boolean(start || end);
+  results = Math.min(Math.max(Math.trunc(results) || (hasRange ? MAX_RESULTS : DEFAULT_RESULTS), 1), MAX_RESULTS);
 
   const { data, error } = await admin
     .from('stations')
@@ -85,10 +94,11 @@ Deno.serve(async (req) => {
 
   const apiKey = one(data.station_channel_secrets)?.read_api_key ?? '';
 
-  const feedUrl =
-    `https://api.thingspeak.com/channels/${encodeURIComponent(channel.channel_id)}/feeds.json` +
-    `?results=${results}` +
-    (apiKey ? `&api_key=${encodeURIComponent(apiKey)}` : '');
+  const feedUrl = new URL(`https://api.thingspeak.com/channels/${channel.channel_id}/feeds.json`);
+  feedUrl.searchParams.set('results', String(results));
+  if (start) feedUrl.searchParams.set('start', start);
+  if (end) feedUrl.searchParams.set('end', end);
+  if (apiKey) feedUrl.searchParams.set('api_key', apiKey);
 
   const upstream = await fetch(feedUrl).catch(() => null);
   if (!upstream || !upstream.ok) {

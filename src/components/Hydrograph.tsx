@@ -10,30 +10,33 @@ import {
   XAxis,
   YAxis,
 } from 'recharts';
-import { Download, Table2, LineChart as LineChartIcon, RefreshCw } from 'lucide-react';
+import { Download, Table2, LineChart as LineChartIcon, RefreshCw, X } from 'lucide-react';
 import { AlertConfig, Reading, StationState } from '../types';
 import { ink, series } from '../theme';
 import { axisDateTime, fullDateTime, num } from '../utils/format';
 import { verticalScale } from '../utils/chartScale';
+import { useHydrographHistory } from '../hooks/useHydrographHistory';
 
 interface HydrographProps {
   station: StationState;
   alerts: AlertConfig[];
   onRefresh: () => void;
-  onResultsCountChange: (count: number) => void;
 }
 
-type RangeId = '1H' | '6H' | '24H' | '7D' | 'ALL';
+type PeriodId = '24H' | '3D' | '7D' | '1M';
 
-const RANGES: { id: RangeId; label: string; ms: number | null }[] = [
-  { id: '1H', label: '1 h', ms: 3_600_000 },
-  { id: '6H', label: '6 h', ms: 6 * 3_600_000 },
-  { id: '24H', label: '24 h', ms: 24 * 3_600_000 },
-  { id: '7D', label: '7 d', ms: 7 * 24 * 3_600_000 },
-  { id: 'ALL', label: 'Todo', ms: null },
+const PERIODS: { id: PeriodId; label: string; ms: number }[] = [
+  { id: '24H', label: '24h', ms: 24 * 3_600_000 },
+  { id: '3D', label: '3D', ms: 3 * 24 * 3_600_000 },
+  { id: '7D', label: '7D', ms: 7 * 24 * 3_600_000 },
+  { id: '1M', label: '1M', ms: 30 * 24 * 3_600_000 },
 ];
 
-const POINT_OPTIONS = [30, 60, 120, 300, 500];
+/** yyyy-mm-dd for a Date, in local time — what the date <input> needs. */
+function toDateInputValue(d: Date): string {
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
 
 interface TooltipPayloadItem {
   value: number;
@@ -178,24 +181,32 @@ const MeasureChart: React.FC<{
   );
 };
 
-export const Hydrograph: React.FC<HydrographProps> = ({
-  station,
-  alerts,
-  onRefresh,
-  onResultsCountChange,
-}) => {
-  const [range, setRange] = useState<RangeId>('ALL');
+export const Hydrograph: React.FC<HydrographProps> = ({ station, alerts, onRefresh }) => {
+  const [period, setPeriod] = useState<PeriodId>('24H');
+  const [pickedDate, setPickedDate] = useState('');
   const [view, setView] = useState<'CHART' | 'TABLE'>('CHART');
 
-  const { config, readings, isLoading } = station;
+  const { config } = station;
   const { levelUnit, flowUnit } = config.settings;
 
-  const data = useMemo(() => {
-    const window = RANGES.find((r) => r.id === range)?.ms ?? null;
-    if (!window || readings.length === 0) return readings;
-    const last = readings[readings.length - 1].tMs;
-    return readings.filter((r) => r.tMs >= last - window);
-  }, [readings, range]);
+  // Relative periods anchor on the latest known reading rather than "now": a
+  // channel that stopped reporting two days ago should still show its last
+  // 24 h of real data, not an empty window measured from the present.
+  const { start, end } = useMemo(() => {
+    if (pickedDate) {
+      return {
+        start: new Date(`${pickedDate}T00:00:00`),
+        end: new Date(`${pickedDate}T23:59:59`),
+      };
+    }
+    const anchor = station.latest?.tMs ?? Date.now();
+    const ms = PERIODS.find((p) => p.id === period)?.ms ?? PERIODS[0].ms;
+    return { start: new Date(anchor - ms), end: new Date(anchor) };
+  }, [pickedDate, period, station.latest?.tMs]);
+
+  const history = useHydrographHistory(config, start, end);
+  const data = history.readings;
+  const isLoading = history.isLoading;
 
   const stats = useMemo(() => {
     if (data.length === 0) return null;
@@ -260,42 +271,55 @@ export const Hydrograph: React.FC<HydrographProps> = ({
             Hidrograma · {config.riverName}
           </h2>
           <p className="text-[11px] text-ink-3 mt-0.5">
-            {data.length} lectura{data.length === 1 ? '' : 's'}
-            {readings.length !== data.length && ` de ${readings.length}`} · nivel medido, caudal
-            estimado con {config.settings.conversionMode}
+            {data.length} lectura{data.length === 1 ? '' : 's'} · nivel medido, caudal estimado con{' '}
+            {config.settings.conversionMode}
           </p>
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center border border-hairline rounded-md overflow-hidden">
-            {RANGES.map((r) => (
+          <div
+            className={`flex items-center border rounded-md pl-2 transition-colors ${
+              pickedDate ? 'border-ink/40 bg-tint' : 'border-hairline'
+            }`}
+          >
+            <input
+              type="date"
+              value={pickedDate}
+              max={toDateInputValue(new Date())}
+              onChange={(e) => setPickedDate(e.target.value)}
+              aria-label="Ver un día específico"
+              className="bg-transparent text-[11px] text-ink cursor-pointer tabular-nums focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 rounded-sm py-1"
+            />
+            {pickedDate && (
               <button
-                key={r.id}
                 type="button"
-                onClick={() => setRange(r.id)}
+                onClick={() => setPickedDate('')}
+                aria-label="Quitar fecha y volver a los periodos"
+                className="p-1 mr-0.5 text-ink-3 hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 rounded"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center border border-hairline rounded-md overflow-hidden">
+            {PERIODS.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => {
+                  setPickedDate('');
+                  setPeriod(p.id);
+                }}
+                aria-pressed={!pickedDate && period === p.id}
                 className={`px-2.5 py-1 text-[11px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ink/30 ${
-                  range === r.id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'
+                  !pickedDate && period === p.id ? 'bg-ink text-white' : 'text-ink-2 hover:bg-hover'
                 }`}
               >
-                {r.label}
+                {p.label}
               </button>
             ))}
           </div>
-
-          <label className="flex items-center gap-1.5 text-[11px] text-ink-3 border border-hairline rounded-md px-2 py-1">
-            Puntos
-            <select
-              value={config.settings.resultsCount}
-              onChange={(e) => onResultsCountChange(Number(e.target.value))}
-              className="bg-transparent text-ink font-medium cursor-pointer tabular-nums rounded-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ink/30"
-            >
-              {POINT_OPTIONS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
-          </label>
 
           <div className="flex items-center border border-hairline rounded-md overflow-hidden">
             <button
@@ -320,7 +344,10 @@ export const Hydrograph: React.FC<HydrographProps> = ({
 
           <button
             type="button"
-            onClick={onRefresh}
+            onClick={() => {
+              onRefresh();
+              history.reload();
+            }}
             disabled={isLoading}
             className="p-1.5 border border-hairline rounded-md text-ink-2 hover:text-ink disabled:opacity-40"
             title="Actualizar"
@@ -340,15 +367,20 @@ export const Hydrograph: React.FC<HydrographProps> = ({
         </div>
       </div>
 
-      {data.length === 0 ? (
+      {history.error ? (
+        <div className="px-4 py-16 text-center">
+          <p className="text-[13px] text-crit font-medium">No se pudo cargar el histórico.</p>
+          <p className="text-[11px] text-ink-3 mt-1.5">{history.error}</p>
+        </div>
+      ) : data.length === 0 ? (
         <div className="px-4 py-16 text-center">
           <p className="text-[13px] text-ink-2">
-            {isLoading ? 'Consultando el canal…' : 'Esta estación aún no tiene lecturas.'}
+            {isLoading ? 'Consultando el canal…' : 'No hay lecturas para el periodo seleccionado.'}
           </p>
           {!isLoading && (
             <p className="text-[11px] text-ink-3 mt-1.5">
-              El canal {config.settings.channelId} responde correctamente pero no ha registrado
-              datos{range !== 'ALL' ? ' en el rango seleccionado' : ''}.
+              El canal {config.settings.channelId} no registró datos{' '}
+              {pickedDate ? `el ${pickedDate.split('-').reverse().join('/')}` : 'en este periodo'}.
             </p>
           )}
         </div>
