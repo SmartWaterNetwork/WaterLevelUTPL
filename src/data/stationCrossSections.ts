@@ -42,6 +42,11 @@ import { CrossSectionPoint } from '../utils/crossSection';
  * the DEM at each site — only which station code they're filed under changed.
  * Prose elsewhere in this codebase describing "st-1" or "st-3" by their old
  * river/structure may still reflect the pre-swap labels.
+ *
+ * 2026-08 (second pass): the same field validation found "Estación 03" and
+ * "Estación 04" (as relabeled by the swap above) were also crossed. Swapped
+ * st-3 and st-4's cross-sections the same way — values untouched, only the
+ * key changed.
  */
 export const STATION_CROSS_SECTIONS: Record<string, CrossSectionPoint[]> = {
   'st-1': [
@@ -55,13 +60,13 @@ export const STATION_CROSS_SECTIONS: Record<string, CrossSectionPoint[]> = {
     [14, 3.216], [17, 3.962], [20, 4.652], [23, 5.116], [25, 5.612],
   ],
   'st-3': [
-    [-24, 2.888], [-21, 2.03], [-18, 1.594], [-15, 1.59], [-12, 1.352], [-9, 1.364],
-    [-6, 1.174], [-3, 0.51], [0, 0], [3, 0.73], [6, 1.01], [9, 1.13], [12, 1.41],
-    [15, 1.564], [18, 1.596], [21, 1.628], [24, 1.622], [26, 1.572],
-  ],
-  'st-4': [
     [-24, 1.924], [-21, 1.866], [-18, 1.884], [-15, 1.846], [-12, 1.704], [-9, 1.722],
     [-6, 1.014], [-3, 0.384], [0, 0], [3, 0.472], [6, 0.148], [9, 0.98], [12, 1.39],
     [15, 1.778], [18, 2.482], [21, 2.884], [24, 3.0], [26, 2.894],
+  ],
+  'st-4': [
+    [-24, 2.888], [-21, 2.03], [-18, 1.594], [-15, 1.59], [-12, 1.352], [-9, 1.364],
+    [-6, 1.174], [-3, 0.51], [0, 0], [3, 0.73], [6, 1.01], [9, 1.13], [12, 1.41],
+    [15, 1.564], [18, 1.596], [21, 1.628], [24, 1.622], [26, 1.572],
   ],
 };

@@ -18,11 +18,13 @@ export type CrossSectionPoint = [number, number];
  * Only the contiguous span *around the channel invert* is kept, expanding
  * outward from it while points stay below the water height. A surveyed
  * transect can have a secondary low point well away from the invert (a
- * terrace, an old channel scar — st-4's profile has exactly this, a shallow
+ * terrace, an old channel scar — st-3's profile has exactly this, a shallow
  * dip around 6 m out) that's separately below the water height without
  * being hydraulically connected to the flowing channel at this stage; naively
  * including every submerged point regardless of position would bridge across
  * the dry ground between the two into one wrong, inflated shape.
+ * (2026-08: this example profile moved from st-4 to st-3 in a station
+ * relabeling — see the note in stationCrossSections.ts.)
  */
 export function waterCrossSectionPoints(
   crossSection: CrossSectionPoint[],

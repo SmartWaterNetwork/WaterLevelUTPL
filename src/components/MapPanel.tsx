@@ -468,12 +468,13 @@ export const MapPanel: React.FC<MapPanelProps> = ({ stations, activeId, onSelect
       // channel: its level reflects the structure's own state (silting up,
       // an outlet choked with debris) rather than a flood wave in transit, so
       // sending a crest travelling downstream from it — through reaches that
-      // are open channel, like st-3's fid 13303/134/13501 — would show
-      // movement that isn't happening there. The structure reach itself
-      // (fid 51, the desarenador st-3 actually sits on) is the exception:
-      // that *is* where the station's own reading lives, so it still animates
-      // to show the alert is active, just without implying it's travelling
-      // any further than the structure.
+      // are open channel, like st-1's fid 13303/134/13501 (2026-08: moved
+      // here from st-3 in a station relabeling) — would show movement that
+      // isn't happening there. The structure reach itself (fid 51, the
+      // desarenador st-1 actually sits on) is the exception: that *is* where
+      // the station's own reading lives, so it still animates to show the
+      // alert is active, just without implying it's travelling any further
+      // than the structure.
       const stationIsStructure = station?.config.settings.conversionMode === 'WEIR';
       const velocity = velocityOf(station);
       const animate =

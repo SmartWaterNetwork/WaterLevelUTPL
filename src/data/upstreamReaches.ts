@@ -79,6 +79,13 @@
  * stationCrossSections.ts. The fid lists themselves are untouched; the
  * doc comment above (referring to "st-1" and "st-3" by their old
  * river/structure) still describes the pre-swap labels.
+ *
+ * 2026-08 (second pass): st-3 and st-4's fid lists (as relabeled by the swap
+ * above) were also crossed and were swapped the same way. The nesting note
+ * above ("station 4's basin falls 100% inside station 3's") described the
+ * *original* st-3/st-4 pairing (the desarenador and its immediate
+ * tributary), not the sites these codes now point at — Quebrada Turunuma and
+ * Quebrada El Alumbre are unrelated headwater catchments, not nested.
  */
 export const UPSTREAM_REACH_FIDS: Record<string, number[]> = {
   'st-1': [
@@ -86,7 +93,8 @@ export const UPSTREAM_REACH_FIDS: Record<string, number[]> = {
     13301, 13302,
   ],
   'st-2': [5302],
-  'st-3': [
+  'st-3': [31, 35, 129, 3601],
+  'st-4': [
     13, 14, 54, 55, 56, 59, 60, 61, 68, 70, 71, 72, 73, 81, 82, 83, 89, 93, 96, 99, 101, 102,
     103, 108, 110, 121, 122, 123, 124, 127, 128, 137, 5801, 5802, 5803, 5804, 5805, 5806, 5807,
     5808, 5809, 5810, 5811, 5812, 5813, 5814, 5815, 5816, 5817, 5818, 5819, 5820, 5821, 5822, 5823,
@@ -94,5 +102,4 @@ export const UPSTREAM_REACH_FIDS: Record<string, number[]> = {
     5840, 5841, 5842, 5843, 5844, 5845, 6401, 6402, 6601, 6602, 6901, 6902, 6903, 6904, 8401, 8402,
     8801, 8802, 11801, 11802, 11803, 49801, 49802, 49803, 49804,
   ],
-  'st-4': [31, 35, 129, 3601],
 };
