@@ -9,6 +9,7 @@ import { configToDraft, saveStation } from './lib/stationsApi';
 import { levelRateOfChange, playAlertChime, triggerPushNotification } from './utils/flowCalculator';
 import { TabId, TopBar } from './components/TopBar';
 import { StationPanel } from './components/StationPanel';
+import { StationSheet } from './components/StationSheet';
 import { MapPanel } from './components/MapPanel';
 import { Hydrograph } from './components/Hydrograph';
 import { SensorSchematic } from './components/SensorSchematic';
@@ -227,11 +228,12 @@ export default function App() {
       )}
 
       {/* The map/telemetry area and the station rail sit side by side on desktop.
-          On phones they stack and the whole column scrolls, map first. */}
-      <main className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden thin-scroll">
-        <div className="flex-1 lg:min-h-0">
+          On phones the rail becomes a bottom sheet (StationSheet, below) instead
+          of pushing content down, so the map keeps the full height. */}
+      <main className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden thin-scroll">
+        <div className="flex-1 min-h-0">
           {tab === 'MAP' ? (
-            <div className="h-[60vh] lg:h-full">
+            <div className="h-full">
               <MapPanel
                 stations={stations}
                 activeId={activeId}
@@ -241,7 +243,7 @@ export default function App() {
               />
             </div>
           ) : active ? (
-            <div className="lg:h-full lg:overflow-y-auto thin-scroll p-3 sm:p-4 space-y-4">
+            <div className="h-full overflow-y-auto thin-scroll p-3 sm:p-4 pb-24 lg:pb-4 space-y-4">
               <Hydrograph
                 station={active}
                 alerts={alerts}
@@ -259,10 +261,12 @@ export default function App() {
           )}
         </div>
 
-        <div className="w-full lg:w-[340px] xl:w-[380px] shrink-0 lg:h-full lg:min-h-0">
+        <div className="hidden lg:block lg:w-[340px] xl:w-[380px] shrink-0 lg:h-full lg:min-h-0">
           <StationPanel stations={stations} activeId={activeId} onSelect={setActiveId} />
         </div>
       </main>
+
+      <StationSheet stations={stations} activeId={activeId} onSelect={setActiveId} />
 
       <Drawer
         isOpen={drawer === 'ALERTS'}

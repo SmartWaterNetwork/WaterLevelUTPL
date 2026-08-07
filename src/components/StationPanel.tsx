@@ -141,22 +141,39 @@ const StationRow: React.FC<{
   );
 };
 
-/**
- * The persistent right-hand rail: the whole network at a glance, and the
- * control that picks which station the map and the charts are about.
- */
-export const StationPanel: React.FC<StationPanelProps> = ({ stations, activeId, onSelect }) => {
-  const withData = stations.filter((s) => s.latest !== null).length;
+/** The scrollable roster of stations, shared by the desktop rail and the mobile sheet. */
+export const StationList: React.FC<StationPanelProps> = ({ stations, activeId, onSelect }) => (
+  <div className="divide-y divide-hairline">
+    {stations.map((station) => (
+      <StationRow
+        key={station.config.id}
+        station={station}
+        isActive={station.config.id === activeId}
+        onSelect={onSelect}
+      />
+    ))}
+  </div>
+);
 
-  // Thresholds are per station. Spelling out one pair only makes sense while
-  // the whole network shares it; otherwise the footer would be quietly wrong.
+// Thresholds are per station. Spelling out one pair only makes sense while
+// the whole network shares it; otherwise a footer stating one would be quietly wrong.
+export function sharedThresholds(stations: StationState[]) {
   const pairs = new Set(
     stations.map((s) => {
       const t = s.config.thresholds ?? LEVEL_THRESHOLDS;
       return `${t.precaucion}/${t.alerta}`;
     })
   );
-  const shared = pairs.size === 1 ? (stations[0].config.thresholds ?? LEVEL_THRESHOLDS) : null;
+  return pairs.size === 1 ? (stations[0].config.thresholds ?? LEVEL_THRESHOLDS) : null;
+}
+
+/**
+ * The persistent right-hand rail: the whole network at a glance, and the
+ * control that picks which station the map and the charts are about.
+ */
+export const StationPanel: React.FC<StationPanelProps> = ({ stations, activeId, onSelect }) => {
+  const withData = stations.filter((s) => s.latest !== null).length;
+  const shared = sharedThresholds(stations);
 
   return (
     <aside className="flex flex-col h-full bg-surface border-l border-hairline">
@@ -167,15 +184,8 @@ export const StationPanel: React.FC<StationPanelProps> = ({ stations, activeId, 
         </p>
       </div>
 
-      <div className="flex-1 overflow-y-auto thin-scroll divide-y divide-hairline">
-        {stations.map((station) => (
-          <StationRow
-            key={station.config.id}
-            station={station}
-            isActive={station.config.id === activeId}
-            onSelect={onSelect}
-          />
-        ))}
+      <div className="flex-1 overflow-y-auto thin-scroll">
+        <StationList stations={stations} activeId={activeId} onSelect={onSelect} />
       </div>
 
       <div className="px-4 py-3 border-t border-hairline text-[10px] text-ink-3 leading-relaxed">
